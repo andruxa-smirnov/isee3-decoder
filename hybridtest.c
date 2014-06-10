@@ -144,7 +144,7 @@ int main(int argc,char *argv[]){
       }
     }
     memset(decode_data,0,sizeof(decode_data));
-    r = fano(&metric,&cycles,decode_data,symbols,Nbits,mettab,delta,Maxcycles,0);
+    r = fano(&metric,&cycles,decode_data,symbols,Nbits,mettab,delta,Maxcycles,0,0);
     totcycles += cycles;
     if(r != 0){
       ++fano_failures;

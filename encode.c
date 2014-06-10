@@ -13,7 +13,8 @@ static inline int parity(unsigned long long x){
 
 // Storing only one symbol per byte uses more space, but it is faster
 // and easier than trying to pack them more compactly.
-int encode(
+// Return encoder state
+unsigned long long encode(
    unsigned char *symbols,	// Output buffer, 2*8*nbytes
    const unsigned char *data,	// Input buffer, nbytes
    unsigned int nbytes,		// Number of bytes in data
@@ -29,7 +30,6 @@ int encode(
     }
     data++;
   }
-  if((encstate & ((1LL << K) -1)) != 0)
-    return -1;  // Warn if encoder wasn't tailed back to 0
-  return 0;
+  encstate &= (1LL << K)-1;
+  return encstate; // Contains tail bits
 }

@@ -3,7 +3,7 @@ CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code
 LDFLAGS=-g -msse4.2
 CC=gcc
 
-MAIN=pmdemod symdemod vdecode framer
+MAIN=pmdemod symdemod vdecode qdecode framer
 OLD=icesync bitsync
 MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown
 
@@ -13,8 +13,11 @@ old: $(OLD)
 
 misc: $(MISC)
 
-framer: framer.o timeformat.o
+qdecode: qdecode.c
 	gcc $(LDFLAGS) -o $@ $^ 
+
+framer: framer.o timeformat.o
+
 
 vdecode: vdecode.o viterbi224_sse2.o timeformat.o
 	gcc $(LDFLAGS) -o $@ $^ 

@@ -33,6 +33,10 @@ void gen_met(
   double left0,left1,right0,right1;
   double inv_noise;
 
+  if(Verbose)
+    printf("gen_met(%p, signal = %lg, noise = %lg, bias = %lg, scale = %lg\n",
+	   mettab,signal,noise,bias,scale);
+
   inv_noise = 1./noise;
 
   // Compute the channel transition probabilities, i.e., the probability of receiving each of the

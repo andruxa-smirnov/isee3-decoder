@@ -44,7 +44,8 @@ unsigned int nbits,	// Number of output bits, including tail
 int mettab[2][256],	// Metric table, [sent sym][rx symbol] 
 int delta,		// Threshold adjust parameter 
 unsigned long maxcycles,// Decoding timeout in cycles per bit 
-unsigned long long encstate) // Starting encoder state
+unsigned long long encstate, // Starting encoder state
+unsigned long long tailbits) // Tail sequence at end of frame
 {
   struct node *nodes;		// First node 
   register struct node *np;	// Current node 
@@ -77,7 +78,7 @@ unsigned long long encstate) // Starting encoder state
     symbols += 2;
   }
   np = nodes;
-  np->encstate = encstate;
+  np->encstate = encstate << 1;
   
   // Compute and sort branch metrics from root node 
   lsym = makesyms(np->encstate);	// 0-branch (LSB is 0)
@@ -137,9 +138,12 @@ unsigned long long encstate) // Starting encoder state
       // Compute and sort metrics, starting with the zero branch
       lsym = makesyms(np->encstate);
       if(np >= tail){
-	// The tail must be all zeroes, so don't even
-	// bother computing the 1-branches there.
-	np->tm[0] = np->metrics[lsym];
+	// Only explore bit specified in tail
+	int tailbit;
+	tailbit = (tailbits >> (lastnode-np-1)) & 1;
+	np->encstate += tailbit;
+	tailbit |= tailbit << 1; // If 1, make it 3
+	np->tm[0] = np->metrics[tailbit^lsym];
       } else {
 	m0 = np->metrics[lsym];
 	m1 = np->metrics[3^lsym];

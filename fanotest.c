@@ -23,7 +23,7 @@ struct option Options[] = {
 };
 
 
-int Nbits = 1024;                // Bits per frame, including tail that must be 0
+int Nbits = 1024;                // Bits per frame, including tail
 double Signal = 30;              // Signal amplitude (scaled to 8 bit byte)
 int Scale = 8;             // Fano metric scaling factor
 const double Rate = 0.5;         // Code rate = 1/2
@@ -32,6 +32,9 @@ unsigned long Maxcycles = 1000;  // Maximum number of decoder moves per bit
 int Trials = 1000;               // Number of frames to test
 int Verbose;                     // diag diarrhea
 int Zerodata;                    // Use all 0's data (no effect on linear codes)
+
+#define TAIL 0x12345
+#define START 0x54321
 
 int main(int argc,char *argv[]){
   int mettab[2][256];
@@ -105,16 +108,19 @@ int main(int argc,char *argv[]){
 
     if(!Zerodata){
       // Generate random data
-      // Note last 3 bytes must be 0 to tail off the encoder
+      // Note last 3 bytes tail off the encoder
       for(i=0;i<(Nbits-64)/8;i++)      // allow room on end for max length tail
 	data[i] = random() & 0xff;
 
+#if 0
       for(;i<Nbits/8;i++)
 	data[i] = 0;
+#else
+      for(;i<Nbits/8;i++)
+	data[i] = (TAIL >> (Nbits - 8*i - 8)) & 0xff;
+#endif
     }
-    i =  encode(symbols,data,sizeof(data),0);
-    assert(i == 0);
-    
+    encode(symbols,data,sizeof(data),START);
 #if 0
     printf("raw data and symbols, no noise:\n");
     for(i=0;i<Nbits;i++){
@@ -152,7 +158,7 @@ int main(int argc,char *argv[]){
       }
     }
     memset(decode_data,0,sizeof(decode_data));
-    r = fano(&metric,&cycles,decode_data,symbols,Nbits,mettab,delta,Maxcycles,0);
+    r = fano(&metric,&cycles,decode_data,symbols,Nbits,mettab,delta,Maxcycles,START,TAIL);
     totcycles += cycles;
     i = memcmp(data,decode_data,sizeof(data));
     bad += (i != 0);

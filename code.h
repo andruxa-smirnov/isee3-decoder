@@ -1,10 +1,9 @@
 
-#define MCQLI24 1  // used by ICE
+#define MCQLI24 1  // k=24 r=1/2 used by ICE
 //#define RJ1 1
 //#define RJ2 1
 //#define BJ24 1
 //#define MJ 1
-//#define MCQLI24 1 // k=24 r=1/2 code for ICE
 //#define JQLIODP48 1
 //#define MCQLI48 1
 //#define OT24 1
@@ -176,7 +175,7 @@
 #endif
 
 
-int encode(
+unsigned long long encode(
    unsigned char *symbols,	// Output buffer, 2*8*nbytes
    const unsigned char *data,	// Input buffer, nbytes
    unsigned int nbytes,  	// Number of bytes in data

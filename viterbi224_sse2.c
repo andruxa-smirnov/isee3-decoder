@@ -142,7 +142,7 @@ int chainback_viterbi224(
 #else
   // alternative that accumulates the data byte in the low 8 bits of endstate
   // This requires endstate to be at least K+8 bits wide
-  // IF YOU USE THIS - THIS NEEDS TO BE FIXED TO HANDLE WRAPAROUND
+  // IF YOU USE THIS - THIS NEEDS TO BE FIXED TO HANDLE WRAPAROUND IN STREAM DECODING
   endstate <<= 8;
   while(nbits-- > 0){
     int bit;
@@ -166,7 +166,7 @@ int decodebit_viterbi224(void *p,int delay,int endstate){
   if(vp == NULL)
     return -1;
 
-  // endstate < 0 means "find best path"
+  // endstate < 0 means "find best path" - it's very slow
   if(endstate < 0){
     minmetric = vp->old_metrics->s[0];
     endstate = 0;
@@ -207,7 +207,8 @@ unsigned long long decodeword_viterbi224(void *p,int delay,int end){
   unsigned long long result = 0;
   unsigned endstate;
 
-  // end < 0 means "find best path"
+  // end < 0 means "find best path" - it's slow, but more tolerable since
+  // we do it only every 64 bits or so
   if(end < 0){
     minmetric = vp->old_metrics->s[0];
     endstate = 0;
