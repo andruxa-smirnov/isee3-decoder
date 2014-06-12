@@ -1,6 +1,7 @@
 // Process baseband PM receiver output from ISEE-3/ICE, find frame sync, find symbol sync, and decode
 // Phil Karn, KA9Q, May 2014
 
+
 #include <stdio.h>
 #include <linux/limits.h>
 #include <unistd.h>
@@ -13,10 +14,8 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <stdint.h>
 #include <complex.h> // Must be before fftw3.h
 #include <fftw3.h>
-#include <getopt.h>
 #include <assert.h>
 #include <locale.h>
 #include "code.h"
@@ -68,7 +67,7 @@ void generate_sync(double symrate){
   data[3] = 0x9f;
   data[4] = 0xbe;
   encode(symbols,data,10,0);
-#if 0
+#if 1
   for(k=0;k<80;k++)
     printf(" %d",symbols[k]);
   printf("\n");
@@ -143,7 +142,7 @@ void generate_sync(double symrate){
 
 
 // Sync vector correlation with FFT - Thanks Mario, DL5MLO
-int fft_sync_search(double *samples,int low,int high,int samp){
+int fft_sync_search(short *samples,int low,int high,int samp){
   int i;
   int peakindex;
   double maxpeak;
@@ -217,7 +216,7 @@ int main(int argc,char *argv[]){
   char *filename;
   struct stat statbuf;
   off_t length;
-  double *samples;
+  short *samples;
   int  nsamples;
   int start;
   int startsync = SYNC_FAIL,endsync = SYNC_FAIL;

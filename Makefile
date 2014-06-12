@@ -1,6 +1,6 @@
 CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code 
 # -fprefetch-loop-arrays -floop-parallelize-all -floop-strip-mine -floop-interchange -floop-block -floop-parallelize-all -ftree-loop-if-convert-stores -ftree-loop-if-convert -ftree-loop-distribution
-LDFLAGS=-g -msse4.2
+LDFLAGS=-g
 CC=gcc
 
 MAIN=pmdemod symdemod vdecode qdecode framer
@@ -17,7 +17,7 @@ qdecode: qdecode.c
 	gcc $(LDFLAGS) -o $@ $^ 
 
 framer: framer.o timeformat.o
-
+	gcc $(LDFLAGS) -o $@ $^
 
 vdecode: vdecode.o viterbi224_sse2.o timeformat.o
 	gcc $(LDFLAGS) -o $@ $^ 
@@ -58,7 +58,19 @@ fanotest: fanotest.o encode.o fano.o metrics.o sim.o
 addnoise: addnoise.o sim.o
 	gcc $(LDFLAGS) -o $@ $^ -lm
 
+bitsync.o: bitsync.c code.h viterbi224.h timeformat.h
+
+icesync.o: icesync.c code.h viterbi224.h
+
 vtest224.o: vtest224.c sim.h viterbi224.h
+
+framer.o: framer.c
+
+vdecode.o: vdecode.c code.h viterbi224.h
+
+pmdemod.o: pmdemod.c
+
+symdemod.o: symdemod.c timeformat.h
 
 fano.o: fano.c fano.h
 

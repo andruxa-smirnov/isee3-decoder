@@ -13,8 +13,6 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <stdint.h>
-#include <getopt.h>
 #include <assert.h>
 #include <locale.h>
 #include "code.h"
@@ -33,7 +31,7 @@ double Symbolsamples;
 double Samprate = 250000;   // Sample rate of PM demodulated symbols
 double Symrate = SYMRATE;   // Symbol rate
 
-double trial_demod(double *samples,int firstsample,double symbolsamples,int symbols);
+double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols);
 
 // 34 bit encoded sync symbols
 
@@ -48,7 +46,7 @@ int main(int argc,char *argv[]){
   char *filename;
   struct stat statbuf;
   off_t length;
-  double *samples;
+  short *samples;
   int  nsamples;
   int firstsample;
   char *locale;
@@ -295,7 +293,7 @@ Symbolsamples = Samprate/Symrate;
   exit(0);
 }
 
-double trial_demod(double *samples,int firstsample,double symbolsamples,int symbols){
+double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols){
   double energy,integrator;
   int ind,i;
   double scount;

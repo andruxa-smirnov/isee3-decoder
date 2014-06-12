@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
+#define _USE_GNU 1
 #include <math.h>
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -12,13 +13,10 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <stdint.h>
 #include <complex.h> // Must be before fftw3.h so it understands native complex double
 #include <fftw3.h>
-#include <getopt.h>
 #include <locale.h>
 #include <assert.h>
-#include "code.h"
 
 
 #undef I
@@ -64,6 +62,7 @@ int main(int argc,char *argv[]){
   int i,fd,start,nsamples,exitcode,lfftsize;
   double cn0_threshold,cn0 = -999;
   complex double loaccel;         // Doppler adjustment, rad/sample^2 (frequency rate)
+
   
   exitcode = 0;
   fd = -1;
@@ -162,7 +161,6 @@ int main(int argc,char *argv[]){
   if(fabs(Carrier_search_freq + Doppler_rate*nsamples/Samprate) > Samprate/2)
     fprintf(stderr,"%s: Warning: specified Doppler will take carrier beyond Nyquist rate, program will exit at that point\n",argv[0]);
 
-  // Compute the Doppler parameters not given
   // If carrier is not specified, we'll lock onto the first frequency that exceeds our C/No threshold
   // FFTW3 can handle arbitrary buffer sizes, but round to a power of 2
   // just to keep things fast
@@ -344,8 +342,11 @@ int main(int argc,char *argv[]){
 	fprintf(stderr,"%s: sample %'d (%'.3lf sec); carrier %'.1lf Hz; C/No = %'.2lf dB%s\n",argv[0],
 		start, start/Samprate, carrier_freq, cn0,cn0 >= cn0_threshold ? " locked" : "");
       for(i=0; i<Fftsize; i++){
-	double s;
-	s = cimag(buffer[i]);
+	short s;
+	// Drop 3 db to ensure clipping can't occur
+	// Worst case is an input sample of abs(I) = abs(Q) = 32767
+	// that gets rotated to the Q axis
+	s = (short) (cimag(buffer[i]) * M_SQRT1_2);
 	fwrite(&s,sizeof(s),1,stdout);
       }
     }

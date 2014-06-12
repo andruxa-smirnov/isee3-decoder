@@ -1,24 +1,13 @@
 // Frame  ISSE-3 frames
 // Phil Karn, KA9Q, June 2014
 
+#define __USE_GNU   1
 #include <stdio.h>
-#include <linux/limits.h>
 #include <unistd.h>
 #include <stdlib.h>
-#define __USE_GNU   1
-#include <math.h>
-#include <sys/mman.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <string.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <stdint.h>
-#include <getopt.h>
 #include <assert.h>
 #include <locale.h>
-#include "code.h"
-#include "viterbi224.h"
 
 #define FRAMEBITS 1024   // 1024 bits per minor frame
 #define FRAMESYMBOLS (2*FRAMEBITS)

@@ -2,17 +2,12 @@
 // Phil Karn, KA9Q, June 2014
 
 #include <stdio.h>
-#include <linux/limits.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <fenv.h>
 #define __USE_GNU   1
 #include <math.h>
-#include <sys/types.h>
 #include <string.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <stdint.h>
-#include <getopt.h>
 #include <assert.h>
 #include <locale.h>
 #include "timeformat.h"
@@ -29,11 +24,11 @@ double Symrate;            // Symbol rate
 int Symbolclocks;          // Clocks per symbol: 1 for 512 bps/1024 sps and up; 8 for  64 bps/128 sps
 int Quiet;
 
-double trial_demod(double *samples,int firstsample,double symbolsamples,int symbols,double gain);
+double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols,double gain);
 
 int main(int argc,char *argv[]){
   int i;
-  double *samples;
+  short *samples;
   int firstsample;
   char *locale;
   int symbols = 0;
@@ -42,6 +37,7 @@ int main(int argc,char *argv[]){
   int total_samples = 0;
   double window;
 
+  fesetround(FE_TONEAREST); // Set rounding mode for nearbyint()
   if((locale = getenv("LANG")) != NULL)
     setlocale(LC_ALL,locale);
   else
@@ -79,7 +75,7 @@ int main(int argc,char *argv[]){
   
   // Allocate room for 1.5 frames at nominal symbol rate
   //  fullwater = FRAMESYMBOLS * Symbolsamples + Samprate/2;   // 1/2 sec of excess - hack
-  fullwater = FRAMESYMBOLS * 1.5 * Symbolsamples; // 1.5 frames
+  fullwater = window * 1.5 * Samprate; // 1.5 x window in seconds
   samples = malloc(fullwater * sizeof(*samples));
   assert(samples != NULL);
 
@@ -93,11 +89,13 @@ int main(int argc,char *argv[]){
     int phase_incr;
     int nsymbols;
 
-    if(firstsample >= Samprate){ // Don't purge less than a second
+    if(firstsample >= window * Samprate){ // Don't purge less than a window
       // purge old samples & slide down 
       int slide;
       
       slide = firstsample - 2*Symbolsamples; // leave a little slop in case symbol timing jumps down
+      if(slide > nsamples)
+	slide = nsamples;
       memmove(samples,&samples[slide],sizeof(*samples)*(nsamples - slide));
       nsamples -= slide;
       firstsample -= slide;
@@ -115,9 +113,10 @@ int main(int argc,char *argv[]){
       }
       nsamples += r/sizeof(*samples);
     }
-    if(nsamples < Symbolsamples * FRAMESYMBOLS)
+    if(nsamples < window * Samprate)
       break;      // Insufficient data; all done
     
+    assert(firstsample < nsamples);
     // Full search of symbol phase at current clock estimate
     // Look at blocks of data 'window' seconds wide
     maxenergy = 0;
@@ -127,6 +126,7 @@ int main(int argc,char *argv[]){
       double energy;
       
       energy = trial_demod(samples,firstsample+i,Symbolsamples,nsymbols,0.); // demod over one window
+      //      fprintf(stderr,"i=%d energy %lg\n",i,energy);
       if(energy > maxenergy){
 	maxenergy = energy;
 	symphase = i;
@@ -192,32 +192,40 @@ int main(int argc,char *argv[]){
 // Demodulate block using specified phase and clock rate, return total demodulated energy
 // If gain == 0, it's a trial demod to measure energy at a clock/phase hypothesis
 // If gain != 0, demodulate the symbols for real and output
-double trial_demod(double *samples,int firstsample,double symbolsamples,int symbols,double gain){
-  double energy,integrator,scount;
-  int ind,i;
+double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols,double gain){
+  double energy,scount;
+  int ind,i,scount_int;
   double halfclock;
   
   energy = 0;
   ind = firstsample;       // Index of first sample to be integrated
+  // because there are a fractional number of samples per symbol, we keep track
+  // of things with floating point numbers. But the actual integration is done
+  // over an integral number of samples, rounded to the nearest one, that can fluctuate
+  // between symbols as fractional samples accumulate to whole samples
   halfclock = (0.5 / Symbolclocks) * symbolsamples; // Width of half clock cycle
   scount = ind + halfclock; // Sample at middle of first symbol; note integer truncation
+  scount_int = nearbyint(scount);
 
   for(i=0;i<symbols;i++){
     int j;
+    long integrator;
 
     integrator = 0;        // reset integrator
     // For 1024 sps and up, there's one clock per symbol. For 128 sps/64 bps, there are 8 clocks/symbol
     // For 32 sps/16 bps, there are 32 clocks/symbol
     for(j=1; j<=Symbolclocks; j++){
-      // Integrate first half of clock
-      for(;ind < scount; ind++)
+      // Integrate first half of clock cycle
+      for(;ind < scount_int; ind++)
 	integrator -= samples[ind];
       
-      // Integrate second half of clock
+      // Integrate second half of clock cycle
       scount += halfclock;
+      scount_int = nearbyint(scount);
       for(; ind < scount; ind++)
 	integrator += samples[ind];
       scount += halfclock; // update for next clock
+      scount_int = nearbyint(scount);
     }
 
     // Integrator now has soft decision sym, 
@@ -233,8 +241,8 @@ double trial_demod(double *samples,int firstsample,double symbolsamples,int symb
       
       putchar((unsigned char)scaled);
     }
-    integrator *= integrator; // symbol amplitude -> energy
-    energy += integrator;     // Accumulate energy
+    // symbol amplitude -> energy
+    energy += (long long)integrator * integrator;
   }
   //  return energy / (ind - firstsample); // Normalize for number of samples used
   return energy / symbols;

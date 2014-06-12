@@ -1,17 +1,11 @@
 // ISEE-3/ICE Viterbi decoder
 // Phil Karn, KA9Q, June 2014
 
+#define __USE_GNU   1
 #include <stdio.h>
-#include <linux/limits.h>
 #include <unistd.h>
 #include <stdlib.h>
-#define __USE_GNU   1
-#include <math.h>
-#include <sys/types.h>
 #include <string.h>
-#include <errno.h>
-#include <stdint.h>
-#include <getopt.h>
 #include <assert.h>
 #include <locale.h>
 #include "code.h"
@@ -52,23 +46,17 @@ int main(int argc,char *argv[]){
   unsigned char oldsymbols[SYMBOLBUFSIZE];
   int symbols = 0;
   unsigned long long symerrs = 0;
-  int counts[1000];
   unsigned long long re_encoder = 0;
-  int k;
-  int sync_sum;
+  int sync_sum,k;
   int status_interval = 1024;
   int sync_count = 0;
-  int peak_inphase_sync;
-  int peak_outphase_sync;
+  int peak_inphase_sync,peak_outphase_sync;
 
-
-  memset(counts,0,sizeof(counts));
   for(i=0;i<SYMBOLBUFSIZE;i += 2){
     oldsymbols[i] = G1FLIP ? 255 : 0;
     oldsymbols[i+1] = G2FLIP ? 255 : 0;
 
   }
-
   if((locale = getenv("LANG")) != NULL)
     setlocale(LC_ALL,locale);
   else
@@ -184,6 +172,7 @@ int main(int argc,char *argv[]){
       }
 #endif
       if(startup_delay == 0)
+	// Compare re-encoded symbols with hard-sliced versions of those actually received
 	symerrs += (s1 ^ (oldsymbols[(SYMBOLBUFSIZE + symbols - 2*(decode_delay+K-2) - 1) % SYMBOLBUFSIZE] > 128))
 	  + (s2 ^ (oldsymbols[(SYMBOLBUFSIZE + symbols - 2*(decode_delay+K-2)) % SYMBOLBUFSIZE] > 128));
       
