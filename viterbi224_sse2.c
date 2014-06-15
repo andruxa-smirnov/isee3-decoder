@@ -1,6 +1,6 @@
 // K=24 r=1/2 Viterbi decoder for ICE
 // Copyright April 2014, Phil Karn, KA9Q
-#include <smmintrin.h>
+#include <emmintrin.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

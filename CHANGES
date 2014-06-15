@@ -1,0 +1,21 @@
+This is a minor change from 0.4. It includes a change made for Tim R to get the Viterbi decoder to compile on a pre-SSE-4.1 system, plus some updates to the README.txt giving the measured symbol rates for the symdemod.
+
+Symdemod (the symbol demodulator) has a pretty stiff symbol tracking loop that may not acquire reliably on the nominal symbol rates (e.g., 32, 1024 and 4096). I've measured the actual clock rate at the nominal 1024 sps rate to be more like 1024.475 Hz, and by multiplying or dividing this number by the appropriate power of two I found I could acquire quite easily at the other data rates.
+
+The -C option to symdemod specifies the number of clocks per symbol. This is set automatically to 1 for symbol rates above 1000 Hz (thus allowing for a -c parameter < 1024 should it drop that low after perigee due to Doppler) and to 1024/symrate for 512 sps and lower. I.e., at 32 sps (16 data bits/sec) symdemod will automatically assume 1024/32 = 32 cycles of 1024 Hz subcarrier per symbol.
+
+This code has been operationally tested at all three data rates I've seen so far:
+
+1024 sps/512 bps (2 sec frames)
+4096 sps/2048 bps (1/2 sec frames)
+32 sps/16 bps    (64 sec frames)
+
+Symdemod is fairly fast at the higher symbol rates but its CPU speed sucks at lower symbol rates because of the very large number of samples per symbol at the USRP A/D rate of 250 kHz and my rather brute force method of time tracking. I'm working on improvements. A simple workaround until then is to insert 'sox' between pmdemod and symdemod to decrease the sample rate from 250 kHz to something more manageable, say, 32768 Hz. Be sure to specify the appropriate lower sample rate to symdemod, as it defaults to 250 kHz.
+
+baudline's observation of the spin-induced Doppler on the RF carrier (caused by a 4.75 cm offset of the S-band antenna from the spacecraft c.g.) made me re-evaluate my carrier frequency tracking algorithm in pmdemod. I had been using a rather narrow FFT frequency bin (analogous to a carrier PLL loop bandwidth) of only 1 Hz, and this caused an appreciable amount of phase twist as the spacecraft rotated 2 radians in each integration period.
+
+I've increased the default to 5 Hz, which should still provide adequate SNR for carrier tracking especially when the new optional search range feature is used. Here's how it works: when the C/No is above a specified threshold (default 21 dB-Hz, appropriate for 512 bps but should be lowered for lower data rates), the carrier is declared "locked" and only a specified range of frequencies are searched around it to minimize the risk of being distracted by a temporary noise spike somewhere else in the receiver passband. When the C/No falls below threshold, the algorithm reverts to looking for the strongest bin anywhere in the passband. This makes essentially no difference when C/No is high (since there's little risk of any noise exceeding the true carrier) but it might make a difference when operating at low C/No, such as at low data rates on smaller antennas.
+
+I'm also working on improvements to the Viterbi decoder phasing algorithm. It works well enough at the higher data rates, but it wastes too many bits to adapt at the lower data rates. I've provided a simple workaround that lets the operator manually override the phase setting; I'd try one, and if that didn't work I'd retry with the other. This is less than user-friendly, so a better idea is to try both phases in parallel and automatically pick whichever one produces good data. This will be acceptable at the lower data rates but will make things even slower at the higher rates so it'll probably be a rate-dependent option.
+
+--Phil
