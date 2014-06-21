@@ -14,8 +14,11 @@
 
 #define FRAMEBITS 1024   // 1024 bits per minor frame
 #define FRAMESYMBOLS (2*FRAMEBITS)
-#define SYMRATE 1024.467    // Nominal symrate for 512 bps mode
+#define NOMINALCLOCK 1024.0
+#define ACTUALCLOCK 1024.467    // Measured clock rate; Doppler is only about 0.01 Hz of this
 
+
+double MaxE;
 
 int Verbose;
 double Symbolsamples;
@@ -25,6 +28,7 @@ int Symbolclocks;          // Clocks per symbol: 1 for 512 bps/1024 sps and up; 
 int Quiet;
 
 double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols,double gain);
+double timesearch(int *offset,short *samples,int firstsample,double symbolsamples,int nsymbols);
 
 int main(int argc,char *argv[]){
   int i;
@@ -44,7 +48,7 @@ int main(int argc,char *argv[]){
     setlocale(LC_ALL,"en_US.utf8");
 
   Samprate = 250000;
-  Symrate = SYMRATE;
+  Symrate = ACTUALCLOCK;
   Symbolclocks = 1;
   window = 1; // Seconds of symbols to examine
   while((i = getopt(argc,argv,"w:c:r:qC:")) != EOF){
@@ -56,9 +60,15 @@ int main(int argc,char *argv[]){
       Quiet = 1;
       break;
     case 'c':
-      Symrate = atof(optarg);   // Initial estimate, will be updated
+      if(!strchr(optarg,'.')){
+	// If no decimal given, scale to measured clock rate
+	Symrate = atof(optarg) * ACTUALCLOCK / NOMINALCLOCK;
+      } else {
+	Symrate = atof(optarg);   // Initial estimate, will be updated
+      }
+
       if(Symrate < 1000){       // Really 1024, but just in case the clock is really slow
-	Symbolclocks = rint(1024/Symrate); // Automatically change to 1024 Hz subcarrier
+	Symbolclocks = rint(NOMINALCLOCK/Symrate); // Automatically change to 1024 Hz subcarrier
 	fprintf(stderr,"Symbolclocks set to %d\n",Symbolclocks);
       }
       break;
@@ -119,21 +129,11 @@ int main(int argc,char *argv[]){
     assert(firstsample < nsamples);
     // Full search of symbol phase at current clock estimate
     // Look at blocks of data 'window' seconds wide
-    maxenergy = 0;
-    symphase = 0; // Avoid uninitialized variable warning
     nsymbols = window*Symrate; // Integer number of symbols to demod
-    for(i = -Symbolsamples/2; i < Symbolsamples/2; i++){
-      double energy;
-      
-      energy = trial_demod(samples,firstsample+i,Symbolsamples,nsymbols,0.); // demod over one window
-      //      fprintf(stderr,"i=%d energy %lg\n",i,energy);
-      if(energy > maxenergy){
-	maxenergy = energy;
-	symphase = i;
-      }
-    }
+    maxenergy = timesearch(&symphase,samples,firstsample,Symbolsamples,nsymbols);
+
     firstsample += symphase;
-    symphase = 0;
+
     // Fine-tune the symbol clock and phase estimates
     clock_incr = 0.5 * Symbolsamples/(window*Samprate); // +/-0.5 sample at end of window
     phase_incr = 1;                       // +/-1 sample throughout window
@@ -192,29 +192,31 @@ int main(int argc,char *argv[]){
 // Demodulate block using specified phase and clock rate, return total demodulated energy
 // If gain == 0, it's a trial demod to measure energy at a clock/phase hypothesis
 // If gain != 0, demodulate the symbols for real and output
-double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols,double gain){
+double trial_demod(short *samples,int firstsample,double symbolsamples,int nsymbols,double gain){
   double energy,scount;
   int ind,i,scount_int;
   double halfclock;
   
   energy = 0;
   ind = firstsample;       // Index of first sample to be integrated
-  // because there are a fractional number of samples per symbol, we keep track
+  // Because there are a fractional number of samples per symbol, we keep track
   // of things with floating point numbers. But the actual integration is done
   // over an integral number of samples, rounded to the nearest one, that can fluctuate
-  // between symbols as fractional samples accumulate to whole samples
+  // between symbols as fractional samples accumulate to whole samples.
+  // This can cause frequency aliasing problems if the signal really has energy
+  // all the way up to the Nyquist bandwidth, but this seems unlikely at high sample rates.
   halfclock = (0.5 / Symbolclocks) * symbolsamples; // Width of half clock cycle
-  scount = ind + halfclock; // Sample at middle of first symbol; note integer truncation
+  scount = ind + halfclock; // First sample in next part of symbol
   scount_int = nearbyint(scount);
 
-  for(i=0;i<symbols;i++){
+  for(i=0;i<nsymbols;i++){
     int j;
     long integrator;
 
     integrator = 0;        // reset integrator
     // For 1024 sps and up, there's one clock per symbol. For 128 sps/64 bps, there are 8 clocks/symbol
     // For 32 sps/16 bps, there are 32 clocks/symbol
-    for(j=1; j<=Symbolclocks; j++){
+    for(j=0; j<Symbolclocks; j++){
       // Integrate first half of clock cycle
       for(;ind < scount_int; ind++)
 	integrator -= samples[ind];
@@ -222,13 +224,12 @@ double trial_demod(short *samples,int firstsample,double symbolsamples,int symbo
       // Integrate second half of clock cycle
       scount += halfclock;
       scount_int = nearbyint(scount);
-      for(; ind < scount; ind++)
+      for(; ind < scount_int; ind++)
 	integrator += samples[ind];
       scount += halfclock; // update for next clock
       scount_int = nearbyint(scount);
     }
-
-    // Integrator now has soft decision sym, 
+    // Integrator now has soft decision symbol
     if(gain != 0){
       double scaled;
 
@@ -244,6 +245,84 @@ double trial_demod(short *samples,int firstsample,double symbolsamples,int symbo
     // symbol amplitude -> energy
     energy += (long long)integrator * integrator;
   }
-  //  return energy / (ind - firstsample); // Normalize for number of samples used
-  return energy / symbols;
+  return energy / nsymbols; //  average energy per symbol
+}
+
+
+// With a given clock, search all timing offsets for maximum energy in a somewhat efficient manner
+double timesearch(int *symphase,short *samples,int firstsample,double symbolsamples,int nsymbols){
+  int i,j,ind,offset,sp;
+  long symbols[nsymbols];
+  double maxenergy,halfclock,scount,energy;
+  int switchpoints[nsymbols*2*Symbolclocks];
+
+  assert(symphase != NULL && samples != NULL);
+
+  // Determine relative waveform transition points
+  halfclock = (0.5 / Symbolclocks) * symbolsamples;
+  scount = halfclock;
+
+  // Do first offset at -1/2 symbol
+  offset = -Symbolsamples/2;
+  memset(symbols,0,sizeof(symbols));
+  sp = 0;
+  energy = 0;
+  ind = firstsample + offset;
+  assert(ind >= 0);
+  for(i=0;i<nsymbols;i++){
+    symbols[i] = 0;
+    for(j=0; j<Symbolclocks; j++){
+      // Integrate first half of clock cycle
+      switchpoints[sp] = nearbyint(scount); // Remember for later adjustments
+      scount += halfclock;
+      for(;ind < switchpoints[sp] + firstsample + offset; ind++)
+	symbols[i] -= samples[ind];
+
+      sp++;
+      // Integrate second half of clock cycle
+      switchpoints[sp] = nearbyint(scount);
+      scount += halfclock;
+      for(; ind < switchpoints[sp] + firstsample + offset; ind++)
+	symbols[i] += samples[ind];
+
+      sp++;
+    }
+    energy += (long long)symbols[i] * symbols[i];
+  }
+  assert(sp <= sizeof(switchpoints)/sizeof(*switchpoints));
+  // So far the only one is the best one
+  maxenergy = energy;
+  *symphase = offset;
+	 
+  // Now do the other offsets by updating the symbols already computed and recomputing energy
+  for(offset++ ; offset < Symbolsamples/2; offset++){
+    sp = 0;
+    energy = 0;
+
+    for(i=0;i<nsymbols;i++){
+      for(j=0; j<Symbolclocks; j++){
+	// Remove previous first sample
+	if(sp == 0)
+	  symbols[i] += samples[firstsample + offset -1];
+	else
+	  symbols[i] += samples[firstsample + offset + switchpoints[sp-1]-1];
+
+	// Flip sign of sample in the middle from + to -
+	symbols[i] -= 2 * samples[firstsample + offset + switchpoints[sp]-1];
+	sp++;
+
+	// Include one more sample to the right
+	symbols[i] += samples[firstsample + offset + switchpoints[sp]-1];
+	sp++;
+      }
+      energy += (long long)symbols[i] * symbols[i];
+    }
+    assert(sp <= sizeof(switchpoints)/sizeof(*switchpoints));
+    if(energy > maxenergy){
+      // Broke the old record
+      maxenergy = energy;
+      *symphase = offset;
+    }
+  }
+  return maxenergy / nsymbols;
 }

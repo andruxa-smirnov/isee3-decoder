@@ -17,6 +17,7 @@
 #include <fftw3.h>
 #include <locale.h>
 #include <assert.h>
+#include "timeformat.h"
 
 
 #undef I
@@ -78,7 +79,7 @@ int main(int argc,char *argv[]){
   Carrier_search_freq = 0;
   Search_width = 0;
   Doppler_rate = 0;
-  Binsize = 1;
+  Binsize = 4;
   Samprate = 250000;
   cn0_threshold = 21; // Corresponds to roughly Eb/N0 = 0 dB for mod of 1.1 radians
 
@@ -339,8 +340,8 @@ int main(int argc,char *argv[]){
 	Carrier_search_freq = carrier_freq; // Center this frequency in search window
 
       if(!Quiet)
-	fprintf(stderr,"%s: sample %'d (%'.3lf sec); carrier %'.1lf Hz; C/No = %'.2lf dB%s\n",argv[0],
-		start, start/Samprate, carrier_freq, cn0,cn0 >= cn0_threshold ? " locked" : "");
+	fprintf(stderr,"%s: sample %'d (%'.3lf sec, %s); carrier %'.1lf Hz; C/No = %'.2lf dB%s\n",argv[0],
+		start, start/Samprate, format_hms(start/Samprate),carrier_freq, cn0,cn0 >= cn0_threshold ? " locked" : "");
       for(i=0; i<Fftsize; i++){
 	short s;
 	// Drop 3 db to ensure clipping can't occur
