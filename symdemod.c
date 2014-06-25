@@ -15,44 +15,49 @@
 #define FRAMEBITS 1024   // 1024 bits per minor frame
 #define FRAMESYMBOLS (2*FRAMEBITS)
 #define NOMINALCLOCK 1024.0
-#define ACTUALCLOCK 1024.467    // Measured clock rate; Doppler is only about 0.01 Hz of this
-
-
-double MaxE;
+#define ACTUALCLOCK 1024.545058    // Measured clock rate @ 128 sps; Doppler is only about 0.01 Hz of this
 
 int Verbose;
-double Symbolsamples;
-int Samprate;              // Sample rate of incoming demodulated PM
-double Symrate;            // Symbol rate
+double Symbolsamples;      // Samples per symbol (updated with Symrate frequency)
+int Samprate;              // Sample rate of incoming demodulated PM (assumed constant and exact)
+double Symrate;            // Symbol rate, Hz
 int Symbolclocks;          // Clocks per symbol: 1 for 512 bps/1024 sps and up; 8 for  64 bps/128 sps
-int Quiet;
+int Clocktrack;            // Track clock frequency if 1, use fixed value if 0
+int Quiet;                 // Suppress debug messages if 1
 
 double trial_demod(short *samples,int firstsample,double symbolsamples,int symbols,double gain);
 double timesearch(int *offset,short *samples,int firstsample,double symbolsamples,int nsymbols);
 
 int main(int argc,char *argv[]){
-  int i;
-  short *samples;
-  int firstsample;
   char *locale;
-  int symbols = 0;
-  int nsamples = 0;
-  int fullwater;
-  int total_samples = 0;
-  double window;
+  short *samples;    // Input sample buffer
+  int firstsample;   // Index of first unprocessed sample in buffer for this window
+  int nsamples = 0;  // Actual number of samples in input buffer (irrespective of firstsample)
+  int fullwater;     // Number of samples to keep in input buffer
+  double window;     // Amount to process per iteration, seconds
+  int nsymbols;      // number of symbols per iteration
+  long long total_samples = 0; // Total samples processed
+  long long total_symbols = 0;   // Count of total symbols processed
+  int i;
 
-  fesetround(FE_TONEAREST); // Set rounding mode for nearbyint()
   if((locale = getenv("LANG")) != NULL)
     setlocale(LC_ALL,locale);
   else
     setlocale(LC_ALL,"en_US.utf8");
 
+  fesetround(FE_TONEAREST); // Set rounding mode for nearbyint()
+
+  // Set defaults, read options
   Samprate = 250000;
   Symrate = ACTUALCLOCK;
   Symbolclocks = 1;
-  window = 1; // Seconds of symbols to examine
-  while((i = getopt(argc,argv,"w:c:r:qC:")) != EOF){
+  window = 1.0; // Seconds of symbols to examine
+  Clocktrack = 0;  // Don't track clock by default
+  while((i = getopt(argc,argv,"w:c:r:qtC:")) != EOF){
     switch(i){
+    case 't':
+      Clocktrack = 1;
+      break;
     case 'w':                  // Period (sec) over which to estimate clock params
       window = atof(optarg);
       break;
@@ -64,12 +69,10 @@ int main(int argc,char *argv[]){
 	// If no decimal given, scale to measured clock rate
 	Symrate = atof(optarg) * ACTUALCLOCK / NOMINALCLOCK;
       } else {
-	Symrate = atof(optarg);   // Initial estimate, will be updated
+	Symrate = atof(optarg);   // Use exact user-specified value
       }
-
       if(Symrate < 1000){       // Really 1024, but just in case the clock is really slow
 	Symbolclocks = rint(NOMINALCLOCK/Symrate); // Automatically change to 1024 Hz subcarrier
-	fprintf(stderr,"Symbolclocks set to %d\n",Symbolclocks);
       }
       break;
     case 'r':
@@ -80,28 +83,24 @@ int main(int argc,char *argv[]){
       break;
     }
   }
-
+  if(!Quiet)
+    fprintf(stderr,"%s: sample rate %'d Hz; estimation window %.3lf sec; clocks/symbol %d; symbol rate %.3lf Hz; tracking %s\n",
+	    argv[0],Samprate,window,Symbolclocks,Symrate,Clocktrack ? "on" : "off");
   Symbolsamples = Samprate/Symrate;
-  
-  // Allocate room for 1.5 frames at nominal symbol rate
-  //  fullwater = FRAMESYMBOLS * Symbolsamples + Samprate/2;   // 1/2 sec of excess - hack
-  fullwater = window * 1.5 * Samprate; // 1.5 x window in seconds
+  fullwater = window * 2.0 * Samprate; // 2 full windows' worth of samples
   samples = malloc(fullwater * sizeof(*samples));
   assert(samples != NULL);
-
+  nsymbols = window*Symrate; // Integer number of symbols to demod
   firstsample = Symbolsamples/2;
+
   while(1){
-    double maxenergy;
-    int nochange;
-    double clock_incr;
-    int symphase;
-    double gain;
-    int phase_incr;
-    int nsymbols;
+    double maxenergy;    // Maximum energy found so far in a trial demod
+    double gain;         // Gain passed to actual demodulation step to scale for Viterbi decoder
+    int symphase;        // Symbol timing adjustment, samples
 
     if(firstsample >= window * Samprate){ // Don't purge less than a window
-      // purge old samples & slide down 
-      int slide;
+      // purge old samples & slide down remaining samples
+      int slide;         // How many samples to remove
       
       slide = firstsample - 2*Symbolsamples; // leave a little slop in case symbol timing jumps down
       if(slide > nsamples)
@@ -111,17 +110,16 @@ int main(int argc,char *argv[]){
       firstsample -= slide;
       total_samples += slide;
     }
-    // Replenish input buffer
+    // Replenish input buffer to full water mark
     while(nsamples < fullwater){
-      int cnt,r;
-      
-      cnt = fullwater - nsamples;
-      r = read(0,&samples[nsamples],sizeof(*samples) * cnt);
-      if(r <= 0){
-	// EOF or error
-	break;
-      }
-      nsamples += r/sizeof(*samples);
+      int cnt;
+
+      cnt = sizeof(*samples) * (fullwater - nsamples); // bytes to read
+      cnt = read(0,&samples[nsamples],cnt); // Actual bytes  read
+      if(cnt <= 0)
+	break;	// EOF or error
+
+      nsamples += cnt/sizeof(*samples);
     }
     if(nsamples < window * Samprate)
       break;      // Insufficient data; all done
@@ -129,61 +127,70 @@ int main(int argc,char *argv[]){
     assert(firstsample < nsamples);
     // Full search of symbol phase at current clock estimate
     // Look at blocks of data 'window' seconds wide
-    nsymbols = window*Symrate; // Integer number of symbols to demod
     maxenergy = timesearch(&symphase,samples,firstsample,Symbolsamples,nsymbols);
-
     firstsample += symphase;
 
-    // Fine-tune the symbol clock and phase estimates
-    clock_incr = 0.5 * Symbolsamples/(window*Samprate); // +/-0.5 sample at end of window
-    phase_incr = 1;                       // +/-1 sample throughout window
-    for(nochange = 0; nochange < 2;){
-      double energy;
-      
-      // Adjust clock, see if it improves
-      if((energy = trial_demod(samples,firstsample,Symbolsamples + clock_incr,nsymbols,0.)) > maxenergy){
-	maxenergy = energy;
-	Symbolsamples += clock_incr;
-	Symrate = Samprate / Symbolsamples;
-	nochange = 0;        // we made progress, don't stop
-      } else if((energy = trial_demod(samples,firstsample,Symbolsamples - clock_incr,nsymbols,0.)) > maxenergy){
-	maxenergy = energy;
-	Symbolsamples -= clock_incr;
-	Symrate = Samprate/Symbolsamples;
-	clock_incr = -clock_incr; // Try this same direction first next time
-	nochange = 0;
-      } else
-	nochange++;          // no improvement
-      
-      // See if changing phase helps
-      if((energy = trial_demod(samples,firstsample + phase_incr,Symbolsamples,nsymbols,0.)) > maxenergy){
-	maxenergy = energy;
-	firstsample += phase_incr;
-	nochange = 0;
-      } else if((energy = trial_demod(samples,firstsample - phase_incr,Symbolsamples,nsymbols,0.)) > maxenergy){
-	maxenergy = energy;
-	firstsample += phase_incr;
-	phase_incr = -phase_incr; // Try this direction first next time
-	nochange = 0;
-      } else
-	nochange++;           // If neither a change in clock or phase helped, we'll fall through the loop
+    if(Clocktrack){
+      // Fine-tune the symbol clock and phase estimates
+      double clock_incr;   // How much to change the clock in one step
+      int nochange;        // Count of trials that have resulted in no improvement
+      int phase_incr;      // How many samples to change the symbol timing in one step
+
+      clock_incr = 0.5 * Symbolsamples/(window*Samprate); // +/-0.5 sample at end of window
+      phase_incr = 1;                       // +/-1 sample throughout window
+      for(nochange = 0; nochange < 2;){
+	double energy;
+	
+	// Adjust clock, see if it improves total demodulated energy
+	if((energy = trial_demod(samples,firstsample,Symbolsamples + clock_incr,nsymbols,0.)) > maxenergy){
+	  maxenergy = energy;
+	  Symbolsamples += clock_incr;
+	  Symrate = Samprate / Symbolsamples;
+	  nochange = 0;        // we made progress, don't stop
+	} else if((energy = trial_demod(samples,firstsample,Symbolsamples - clock_incr,nsymbols,0.)) > maxenergy){
+	  maxenergy = energy;
+	  Symbolsamples -= clock_incr;
+	  Symrate = Samprate/Symbolsamples;
+	  clock_incr = -clock_incr; // Try this same direction first next time
+	  nochange = 0;
+	} else
+	  nochange++;          // no improvement
+	
+	// See if changing phase helps improve total demodulated energy
+	if((energy = trial_demod(samples,firstsample + phase_incr,Symbolsamples,nsymbols,0.)) > maxenergy){
+	  maxenergy = energy;
+	  firstsample += phase_incr;
+	  nochange = 0;
+	} else if((energy = trial_demod(samples,firstsample - phase_incr,Symbolsamples,nsymbols,0.)) > maxenergy){
+	  maxenergy = energy;
+	  firstsample += phase_incr;
+	  phase_incr = -phase_incr; // Try this direction first next time
+	  nochange = 0;
+	} else
+	  nochange++;           // If neither a change in clock or phase helped, we'll fall through the loop
+      }
+      // Update in case Symrate has changed a lot, but defer until now to avoid upsetting energy calculation
+      nsymbols = window*Symrate;
     }
     assert(firstsample >= 0);
     if(!Quiet)
-      fprintf(stderr,"%s: sample %'d (%'.3lf sec, %s) symbol %'d: clock %'.4lf Hz; %'.4lf samp/sym; energy %.3lf dB\n",
+      fprintf(stderr,"%s: sample %'lld (%'.3lf sec, %s) symbol %'lld: clock %'.4lf Hz; %'.4lf samp/sym; timing adj %+d samples; energy %.3lf dB\n",
 	      argv[0],
 	      firstsample+total_samples,
 	      (double)(firstsample+total_samples)/Samprate,
 	      format_hms((double)(firstsample+total_samples)/Samprate),
-	      symbols,
-	      Symrate,Symbolsamples,10*log10(maxenergy));
+	      total_symbols,
+	      Symrate,
+	      Symbolsamples,
+	      symphase,
+	      10*log10(maxenergy));
     
 
     // Demodulate using parameters
     gain = 100./sqrt(maxenergy); // Hack
     trial_demod(samples,firstsample,Symbolsamples,nsymbols,gain);
     firstsample += nsymbols * Symbolsamples;
-    symbols += window * Symrate;
+    total_symbols += nsymbols;
     fflush(stdout); // Keep the shell pipeline going
   }
   exit(0);

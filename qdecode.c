@@ -2,7 +2,6 @@
 // Phil Karn, KA9Q, June 2014
 
 #include <stdio.h>
-#include <linux/limits.h>
 #include <unistd.h>
 #include <stdlib.h>
 #define __USE_GNU   1
@@ -45,17 +44,11 @@ int main(int argc,char *argv[]){
   int i;
   char *locale;
   unsigned char vdsyms[2];
-  int startup_delay;
-  int decode_delay = 200;
-  unsigned long long bits = 0;
   unsigned char oldsymbols[SYMBOLBUFSIZE];
   int symbols = 0;
-  unsigned long long symerrs = 0;
   int counts[1000];
-  unsigned long long re_encoder = 0;
   int k;
   int sync_sum;
-  int status_interval = 1024;
   int sync_count = 0;
   int peak_inphase_sync;
   int peak_outphase_sync;

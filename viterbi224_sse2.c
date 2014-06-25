@@ -1,6 +1,7 @@
 // K=24 r=1/2 Viterbi decoder for ICE
 // Copyright April 2014, Phil Karn, KA9Q
-#include <emmintrin.h>
+//#include <emmintrin.h>
+#include <x86intrin.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -274,6 +275,14 @@ int update_viterbi224_blk(void *p,const unsigned char *syms,int nbits){
     for(i=0; i < 1<<(K-5); i++){
       __m128i decision0,decision1,metric,m_metric,m0,m1,m2,m3,survivor0,survivor1;
 
+#if 0
+      // Prefetch the memory for the next loop iteration. Doesn't seem to help.
+      __builtin_prefetch((void *)&Branchtab224[0].v[i+1],0,0);
+      __builtin_prefetch((void *)&Branchtab224[1].v[i+1],0,0);
+      __builtin_prefetch((void *)&vp->old_metrics->v[i+1],0,0);
+      __builtin_prefetch((void *)&vp->old_metrics->v[(1<<(K-5))+i+1],0,0);
+#endif
+
       // Form branch metrics
       // Because Branchtab takes on values 0 and 255, and the values of sym?v are offset binary in the range 0-255,
       // the XOR operations constitute conditional negation.
@@ -286,13 +295,6 @@ int update_viterbi224_blk(void *p,const unsigned char *syms,int nbits){
       m3 = _mm_adds_epi16(vp->old_metrics->v[(1<<(K-5))+i],metric);
       m1 = _mm_adds_epi16(vp->old_metrics->v[(1<<(K-5))+i],m_metric);
       m2 = _mm_adds_epi16(vp->old_metrics->v[i],m_metric);
-    
-#if 0
-      _mm_prefetch((void *)&Branchtab224[0].v[i+1],3);
-      _mm_prefetch((void *)&Branchtab224[1].v[i+1],3);
-      _mm_prefetch((void *)&vp->old_metrics->v[i+1],0);
-      _mm_prefetch((void *)&vp->old_metrics->v[(1<<(K-5))+i],0);
-#endif
 
       // Determine winners in one of two ways:
       // Direct comparison ought to be faster by not having to wait for the minimum operation,
@@ -318,7 +320,6 @@ int update_viterbi224_blk(void *p,const unsigned char *syms,int nbits){
  
       // Pack each set of decisions into 8 8-bit bytes, then interleave and compress into 16 bits
       d->s[i] = _mm_movemask_epi8(_mm_unpacklo_epi8(_mm_packs_epi16(decision0,_mm_setzero_si128()),_mm_packs_epi16(decision1,_mm_setzero_si128())));
-
       // Store surviving metrics
       vp->new_metrics->v[2*i] = _mm_unpacklo_epi16(survivor0,survivor1);
       vp->new_metrics->v[2*i+1] = _mm_unpackhi_epi16(survivor0,survivor1);

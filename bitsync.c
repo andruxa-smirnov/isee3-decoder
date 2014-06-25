@@ -47,7 +47,7 @@ int main(int argc,char *argv[]){
   struct stat statbuf;
   off_t length;
   short *samples;
-  int  nsamples;
+  long long nsamples;
   int firstsample;
   char *locale;
   double maxenergy;
@@ -122,22 +122,8 @@ Symbolsamples = Samprate/Symrate;
     exit(1);
   }
   nsamples = length / sizeof(*samples);
-  {
-    int  hours,minutes;
-    double secs,seconds;
-
-    seconds = nsamples/Samprate;
-    hms(&hours,&minutes,&secs,seconds);
-
-    if(seconds > 60){
-      printf("%s: %'d samples; %'.3lf seconds (%s) @ %'.1lf Hz\n",
-             filename,nsamples,seconds,format_hms(seconds),Samprate);
-    } else {
-      printf("%s: %'d samples; %'.3lf seconds @ %'.1lf Hz\n",
-             filename,nsamples,seconds,Samprate);
-    }
-  }
-
+  printf("%s: %'lld samples; %'.3lf sec (%s) @ %'.1lf Hz\n",
+	 filename,nsamples,nsamples/Samprate,format_hms(nsamples/Samprate),Samprate);
   vd = create_viterbi224(250); // Must be bigger than the traceback depth
   assert(vd != NULL);
   init_viterbi224(vd,0); // See what happens

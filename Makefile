@@ -1,19 +1,27 @@
-CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code 
+INCLUDE=
+LIBPATH=
+CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code $(INCLUDE)
 # -fprefetch-loop-arrays -floop-parallelize-all -floop-strip-mine -floop-interchange -floop-block -floop-parallelize-all -ftree-loop-if-convert-stores -ftree-loop-if-convert -ftree-loop-distribution
-LDFLAGS=-g
+LDFLAGS=-g $(LIBPATH)
 CC=gcc
 
 MAIN=pmdemod symdemod vdecode qdecode framer
 OLD=icesync bitsync
-MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown
+MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown autocorrelate
 
 all: $(MAIN)
+
+install: all
+	cp $(MAIN) ~/bin/
 
 old: $(OLD)
 
 misc: $(MISC)
 
-qdecode: qdecode.c
+autocorrelate: autocorrelate.o
+	gcc $(LDFLAGS) -o $@ $^ -lfftw3 -lm	
+
+qdecode: qdecode.o
 	gcc $(LDFLAGS) -o $@ $^ 
 
 framer: framer.o timeformat.o

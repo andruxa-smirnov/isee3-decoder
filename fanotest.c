@@ -79,7 +79,6 @@ int main(int argc,char *argv[]){
       printf("Usage: %s [-m maxcycles/bit] [-l bits/frame] [-n numframes] [-e Eb/No] [-s signal_amplitude] [-v] [-z]\n",
 	     argv[0]);
       exit(1);
-      break;
     }
   }
   if(Nbits < 64){
