@@ -1,22 +1,32 @@
 ISEE-3/ICE Telemetry demodulator and decoder
-Copyright Phil Karn, KA9Q, 15 June 2014
-version 0.5
+Copyright Phil Karn, KA9Q, 26 June 2014
+version 0.8
 May be used under the terms of the GNU Public License 2.0 (GPL)
-
 
 This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into four modules that you run
 in a UNIX pipeline like this:
 
-pmdemod input_file | symdemod | vdecode | framer
+pmdemod input_file | symdemod -c <symrate> | vdecode | framer -r <data rate>
 
-The input_file is expected to be a series of 16-bit signed integer samples in little-endian format. The I
-channel is expected first. If Q is first, use the -f (flip) flag to invert the spectrum.
+Note that with ISEE-3, the symrate is always twice the data rate.
 
-Each program writes its status to stderr so you can see what it's doing while its output is redirected.
+Starting with version 0.8, pmdemod can read from a pipe or device as
+well as a file, and will read from standard input if no file name is
+given as a parameter.
 
-This version has been tested at 32 sps/16 bps, 1024 sps/512 bps and 4096 sps/2048 bps. Note: it's important
-to give a precise clock to symdemod with the -c option or symbol acquisition may not be reliable.
-The measured clock speeds (at -3 km/s velocity) are:
+The input stream is expected to be a series of 16-bit signed integer
+samples in little-endian format. The I channel is expected first. If Q
+is first, use the -f (flip) flag to pmdemod to invert the spectrum.
+
+Each program writes its status to stderr so you can see what it's
+doing while its output is redirected. Use the -q option to a
+program to shut up its diagnostics.
+
+This version has been tested at 32 sps/16 bps, 128 sps/64 bps, 1024
+sps/512 bps and 4096 sps/2048 bps. Specifying an integer to the -c
+option of symdemod causes the actual clock frequency (which is
+slightly higher) to be used. The measured clock speeds (at -3 km/s
+velocity) are approximately:
 
 1024 sps: 1024.475 Hz
 4096 sps: 4097.9 Hz
@@ -48,4 +58,6 @@ vdecode - Reads output of symdemod on stdin, writes Viterbi-decoded bits on stdo
 framer - reads output of vdecode on stdin, detects frame sync, writes decoded telemetry frames in hex on stdout
 -r bitrate, Hz; default 512 (only for time estimation)
 
-The old programs icedemod, icesync and bitsync are included for reference but are not built by default.
+The old programs icedemod, icesync and bitsync are included for reference but are not built by default and may
+not even still compile.
+

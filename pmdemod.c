@@ -1,7 +1,7 @@
 // ICE PM demodulator
 // Reads stereo signal with I&Q channels, finds residual carrier, spins it down to zero,
-// outputs baseband data on stdout as 64-bit doubles in machine format
-// 2 June 2014, Phil Karn, KA9Q
+// outputs baseband data on stdout as 16-bit signed short ints in machine format
+// 26 June 2014, Phil Karn, KA9Q
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -52,26 +52,25 @@ double cenergy(double complex x){
 }
 
 int main(int argc,char *argv[]){
-  char *filename,*locale;
-  struct sample *samples = MAP_FAILED;
-  off_t length;
+  char *locale;
+
   struct stat statbuf;
   fftw_plan ff = NULL;
   double complex *buffer = NULL;
   double complex *spectrum = NULL;
   double carrier_freq;
-  int i,fd,start,nsamples,exitcode,lfftsize;
+  int i,exitcode,lfftsize;
   double cn0_threshold,cn0 = -999;
   complex double loaccel;         // Doppler adjustment, rad/sample^2 (frequency rate)
-
-  
-  exitcode = 0;
-  fd = -1;
+  FILE *input = NULL;
+  long long total_samples = 0;
 
   if((locale = getenv("LANG")) != NULL)
     setlocale(LC_ALL,locale);
   else
     setlocale(LC_ALL,"en_US.utf8"); // The world revolves around the USA...
+
+  exitcode = 0;
 
   // Some explicit defaults
   Quiet = 0;
@@ -81,7 +80,7 @@ int main(int argc,char *argv[]){
   Doppler_rate = 0;
   Binsize = 4;
   Samprate = 250000;
-  cn0_threshold = 21; // Corresponds to roughly Eb/N0 = 0 dB for mod of 1.1 radians
+  cn0_threshold = 21; // Corresponds to roughly Eb/N0 = 0 dB for mod of 1.1 radians at 512 bps
 
   while((i = getopt(argc,argv,"S:W:D:r:fb:qt:")) != EOF){
     switch(i){
@@ -127,51 +126,16 @@ int main(int argc,char *argv[]){
     fprintf(stderr,"%s: Search width > 1/2 Nyquist rate; reduced to +/- %'.1lf Hz\n",argv[0],Samprate/2);
     Search_width = Samprate/2;
   }
-  if(argc <= optind){
-    fprintf(stderr,"%s: missing input filename\n",argv[0]);
-    exit(1);
-  }
-  filename = argv[optind];
-  if(lstat(filename,&statbuf) == -1){
-    fprintf(stderr,"%s: lstat(%s) failed: %s\n",argv[0],filename,strerror(errno));
-    exitcode = 1;
-    goto done;
-  }
-  if(!S_ISREG(statbuf.st_mode)){
-    fprintf(stderr,"%s: %s is not an ordinary file\n",argv[0],filename);
-    exitcode = 1;
-    goto done;
-  }
-  length = statbuf.st_size;
-  if((fd = open(filename,O_RDONLY)) == -1){
-    fprintf(stderr,"%s: open(%s,readonly) failed; %s\n",argv[0],filename,strerror(errno));
-    exitcode = 1;
-    goto done;
-  }
-  if((samples = mmap(NULL,length,PROT_READ,MAP_SHARED,fd,0)) == MAP_FAILED){
-    fprintf(stderr,"%s: mmap(%s,%lld) failed: %s\n",argv[0],filename,
-	    (long long)length,strerror(errno));
-    exitcode = 1;
-    goto done;
-  }
-  nsamples = length / sizeof(struct sample);
   lfftsize = nearbyint(log2(Samprate / Binsize));
   Fftsize = 1 << lfftsize;
   Binsize = Samprate/Fftsize;    // Frequency width of each FFT bin, Hz
-
-  if(fabs(Carrier_search_freq + Doppler_rate*nsamples/Samprate) > Samprate/2)
-    fprintf(stderr,"%s: Warning: specified Doppler will take carrier beyond Nyquist rate, program will exit at that point\n",argv[0]);
 
   // If carrier is not specified, we'll lock onto the first frequency that exceeds our C/No threshold
   // FFTW3 can handle arbitrary buffer sizes, but round to a power of 2
   // just to keep things fast
   if(!Quiet)
-    fprintf(stderr,"%s: demodulating %s: %'lld bytes; %'lld samples; %'.2lf sec @ %'.1lf Hz; FFT bin size %'.4lf Hz",argv[0],
-	    argv[optind],(long long)length,(long long)nsamples,nsamples/Samprate,Samprate,Samprate/Fftsize);
-
-  if(!Quiet)
-    fprintf(stderr,"; Start carrier %'.4lf Hz; Doppler %'.6lf Hz/s; Search range +/- %'.1lfHz\n",
-	    Carrier_search_freq,Doppler_rate,Search_width);
+    fprintf(stderr,"%s: FFT bin size %'.4lf Hz; Start carrier %'.4lf Hz; Doppler %'.6lf Hz/s; Search range +/-%'.1lf Hz\n",
+	    argv[0],Samprate/Fftsize,Carrier_search_freq,Doppler_rate,Search_width);
 
   // Convert Doppler values to internal units
   {
@@ -192,7 +156,7 @@ int main(int argc,char *argv[]){
     exitcode = 2;
     goto done;
   }
-  // Set up complex FFT
+  // Set up complex FFT. Note: non-destructive of input buffer, as we'll need it
   fftw_import_system_wisdom();
   if((ff = fftw_plan_dft_1d(Fftsize,buffer,spectrum,FFTW_FORWARD,FFTW_ESTIMATE)) == NULL){
     fprintf(stderr,"%s: Can't set up FFT\n",argv[0]);
@@ -200,19 +164,69 @@ int main(int argc,char *argv[]){
     goto done;
   }
 
-  // For each block of input samples
-  for(start=0; start < nsamples; start += Fftsize){
-  
+  // Set up input
+  if(argc > optind){
+    // Read from specified file
+    if((input = fopen(argv[optind],"r")) == NULL){
+      fprintf(stderr,"%s: Can't read %s; %s\n",argv[0],argv[optind],strerror(errno));
+      exitcode = 1;
+      goto done;
+    }
+  } else {
+    input = stdin; // Read from standard input
+  }
+  // Find out what we're reading from
+  if(isatty(fileno(input))){
+    fprintf(stderr,"%s: Can't read from terminal\n",argv[0]);
+    exitcode = 1;
+    goto done;
+  }
+  if(fstat(fileno(input),&statbuf) == -1){
+    fprintf(stderr,"%s: fstat of input failed: %s\n",argv[0],strerror(errno));
+    exitcode = 1;
+    goto done;
+  }
+  if(S_ISDIR(statbuf.st_mode)){
+    fprintf(stderr,"%s: Can't read a directory\n",argv[0]);
+    exitcode = 1;
+    goto done;
+  }
+  if(S_ISREG(statbuf.st_mode)){
+    if(!Quiet){
+      long long nsamples;
+
+      nsamples = statbuf.st_size / sizeof(struct sample);
+      fprintf(stderr,"%s: demodulating %'lld bytes; %'lld samples; %'.2lf sec @ %'.1lf Hz\n",argv[0],
+	      (long long)statbuf.st_size,
+	      nsamples,nsamples/Samprate,Samprate);
+    }
+  }
+  while(1){
+    // Load up FFT input buffer. Ignore remainder and quit if we don't have enough
     if(!Flip_samples){
-      int i;
+      int i,n;
+      struct sample sample;
 
-      for(i=0; i<Fftsize; i++)
-	buffer[i] = samples[start+i].i + Q*samples[start+i].q;
+      for(i=0; i<Fftsize; i++){
+	n = fread(&sample,sizeof(sample),1,input);
+	if(n < 1){
+	  exitcode = 0;
+	  goto done;
+	}
+	buffer[i] = sample.i + Q*sample.q;
+      }
     } else { // I & Q samples swapped (invert spectrum)
-      int i;
+      int i,n;
+      struct sample sample;
 
-      for(i=0; i<Fftsize; i++)
-	buffer[i] = samples[start+i].q + Q*samples[start+i].i;
+      for(i=0; i<Fftsize; i++){
+	n = fread(&sample,sizeof(sample),1,input);
+	if(n < 1){
+	  exitcode = 0;
+	  goto done;
+	}
+	buffer[i] = sample.q + Q*sample.i;
+      }
     }
     // Apply Doppler chirp if specified
     if(Doppler_rate != 0){
@@ -230,6 +244,7 @@ int main(int argc,char *argv[]){
     }
 
     // Search for carrier frequency with FFT
+    // This admittedly doesn't account for scalloping losses, so we might not actually get the peak bin
     {
       int firstbin,lastbin,i;
       int peak,next,prev;
@@ -274,7 +289,7 @@ int main(int argc,char *argv[]){
       maxenergy = 0;
       for(i=firstbin; i<lastbin; i++){
 	energy = cenergy(spectrum[i]);
-	if(energy >= maxenergy){ // so it always succeeds at least the first  time and peak can't be untouched
+	if(energy >= maxenergy){ // so it always succeeds at least the first time and peak can't be untouched
 	  // The most energetic frequency bin contains the carrier
 	  maxenergy = energy;
 	  peak = i;
@@ -334,14 +349,15 @@ int main(int argc,char *argv[]){
       carrier_sq /= Fftsize;  // mean of carrier squares
       carrier_sum /= Fftsize; // mean carrier
       carrier_sum *= carrier_sum; // square of mean carrier
-      cn0 = 10*log10(0.5*Samprate*carrier_sum/(carrier_sq-carrier_sum)); // C/N0 estimate in dB
+      cn0 = 10*log10(0.5*Samprate*carrier_sum/(carrier_sq-carrier_sum)); // Update C/N0 estimate in dB
 
       if(cn0 > cn0_threshold)
 	Carrier_search_freq = carrier_freq; // Center this frequency in search window
 
       if(!Quiet)
-	fprintf(stderr,"%s: sample %'d (%'.3lf sec, %s); carrier %'.1lf Hz; C/No = %'.2lf dB%s\n",argv[0],
-		start, start/Samprate, format_hms(start/Samprate),carrier_freq, cn0,cn0 >= cn0_threshold ? " locked" : "");
+	fprintf(stderr,"%s: sample %'lld (%'.3lf sec, %s); carrier %'.1lf Hz; C/No = %'.2lf dB%s\n",argv[0],
+		total_samples, total_samples/Samprate, format_hms(total_samples/Samprate),carrier_freq,
+		cn0,cn0 >= cn0_threshold ? " locked" : "");
       for(i=0; i<Fftsize; i++){
 	short s;
 	// Drop 3 db to ensure clipping can't occur
@@ -351,19 +367,21 @@ int main(int argc,char *argv[]){
 	fwrite(&s,sizeof(s),1,stdout);
       }
     }
+    fflush(stdout);
+    total_samples += Fftsize;
   }
   done:; // Clean up and exit
-    if(samples != MAP_FAILED && munmap(samples,length) == -1){
-      fprintf(stderr,"%s: munmap(%p,%lld) failed: %s\n",argv[0],samples,(long long)length,strerror(errno));
-  }
-  if(fd != -1)
-    close(fd);
+  if(input != NULL)
+    fclose(input);
 
   if(ff != NULL)
     fftw_destroy_plan(ff);
 
   if(buffer != NULL)
     fftw_free(buffer);
+
+  if(spectrum != NULL)
+    fftw_free(spectrum);
 
   exit(exitcode);
 }
