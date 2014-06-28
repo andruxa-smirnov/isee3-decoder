@@ -5,18 +5,21 @@ CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code $(INCLUDE)
 LDFLAGS=-g $(LIBPATH)
 CC=gcc
 
-MAIN=pmdemod symdemod vdecode qdecode framer
-OLD=icesync bitsync
+MAIN=pmdemod symdemod decode
+OLD=icesync bitsync framer vdecode
 MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown autocorrelate
 
 all: $(MAIN)
 
 install: all
-	cp $(MAIN) ~/bin/
+	install $(MAIN) ~/bin/
 
 old: $(OLD)
 
 misc: $(MISC)
+
+decode: decode.o viterbi224_sse2.o timeformat.o metrics.o fano.o
+	gcc $(LDFLAGS) -o $@ $^  -lm
 
 autocorrelate: autocorrelate.o
 	gcc $(LDFLAGS) -o $@ $^ -lfftw3 -lm	

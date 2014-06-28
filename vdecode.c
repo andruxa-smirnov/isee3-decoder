@@ -178,7 +178,7 @@ int main(int argc,char *argv[]){
       
 
       if(!Quiet && status_interval != 0 && (++bits % status_interval) == 0){
-	fprintf(stderr,"%s: bits %'llu; symerrs %'llu/%d %'.3lg%%\n",argv[0],
+	fprintf(stderr,"%s: bits %'llu; symerrs %'llu/%'d %'.3lg%%\n",argv[0],
 		bits,symerrs,2*status_interval,100.*symerrs/(2.*status_interval));
 	symerrs = 0;
       }

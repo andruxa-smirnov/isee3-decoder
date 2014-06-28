@@ -145,7 +145,7 @@ int main(int argc,char *argv[]){
     memset(decode_data,0,sizeof(decode_data));
     r = fano(&metric,&cycles,decode_data,symbols,Nbits,mettab,delta,Maxcycles,0,0);
     totcycles += cycles;
-    if(r != 0){
+    if(r != Nbits){
       ++fano_failures;
       if(Verbose)
 	printf("trial %d fano: decode failure\n",trial);

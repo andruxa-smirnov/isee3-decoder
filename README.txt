@@ -1,32 +1,25 @@
 ISEE-3/ICE Telemetry demodulator and decoder
-Copyright Phil Karn, KA9Q, 26 June 2014
-version 0.8
+Copyright Phil Karn, KA9Q, 28 June 2014
+version 0.9
 May be used under the terms of the GNU Public License 2.0 (GPL)
 
-This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into four modules that you run
-in a UNIX pipeline like this:
+The major change in this version is the new program "decode" that replaces both vdecode and framer. It also incorporates the Fano sequential decoding algorithm as an alternative to the slow Viterbi algorithm. Fano is enormously faster than Viterbi but performs about 0.5 - 1.0 dB worse. Fano also has a variable execution speed that increases sharply as the decoder Eb/No threshold of about 2.5 dB is reached.
 
-pmdemod input_file | symdemod -c <symrate> | vdecode | framer -r <data rate>
+This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into three (not four) modules that you run in a UNIX pipeline like this:
+
+pmdemod input_file | symdemod [-c <symrate>] | decode [-f] [-r <symrate>]
+
+The -f option to decode specifes the Fano algorithm; the default is Viterbi.
 
 Note that with ISEE-3, the symrate is always twice the data rate.
 
-Starting with version 0.8, pmdemod can read from a pipe or device as
-well as a file, and will read from standard input if no file name is
-given as a parameter.
+Starting with version 0.8, pmdemod can read from a pipe or device as well as a file, and will read from standard input if no file name is given as a parameter.
 
-The input stream is expected to be a series of 16-bit signed integer
-samples in little-endian format. The I channel is expected first. If Q
-is first, use the -f (flip) flag to pmdemod to invert the spectrum.
+The input stream is expected to be a series of 16-bit signed integer samples in little-endian format. The I channel is expected first. If Q is first, use the -f (flip) flag to pmdemod to invert the spectrum.
 
-Each program writes its status to stderr so you can see what it's
-doing while its output is redirected. Use the -q option to a
-program to shut up its diagnostics.
+Each program writes its status to stderr so you can see what it's doing while its output is redirected. Use the -q option to a program to shut up its diagnostics.
 
-This version has been tested at 32 sps/16 bps, 128 sps/64 bps, 1024
-sps/512 bps and 4096 sps/2048 bps. Specifying an integer to the -c
-option of symdemod causes the actual clock frequency (which is
-slightly higher) to be used. The measured clock speeds (at -3 km/s
-velocity) are approximately:
+This version has been tested at 32 sps/16 bps, 128 sps/64 bps, 1024 sps/512 bps and 4096 sps/2048 bps. Specifying an integer to the -c option of symdemod causes the actual clock frequency (which is slightly higher) to be used. The measured clock speeds (at -3 km/s velocity) are approximately:
 
 1024 sps: 1024.475 Hz
 4096 sps: 4097.9 Hz
@@ -49,6 +42,17 @@ symdemod - reads output of pmdemod on stdin, writes demodulated, 8-bit (offset-1
 -r Sample rate, Hz; default 250000
 -q quiet mode
 
+decode - Reads output of symdemod on stdin, writes decoded frames on stdout
+-f Use Fano sequential decoding instead of Viterbi decoding
+-r Symbol rate, Hz; default 1024 (used only for output timestamps)
+-s Fano scale parameter; default 8
+-d Fano delta parameter; default 32
+-m Fano maximum cycles per bit; default 100
+
+The new 'decode' program replaces both vdecode and framer, which were used as follows:
+
+pmdemod input_file | symdemod -c <symrate> | vdecode | framer -r <bitrate>
+
 vdecode - Reads output of symdemod on stdin, writes Viterbi-decoded bits on stdout ('0'/'1')
 -p Start with opposite decoder symbol phase (also flips automatically based on encoded sync observations)
 -i Status update interval, bits; default 1024
@@ -58,6 +62,5 @@ vdecode - Reads output of symdemod on stdin, writes Viterbi-decoded bits on stdo
 framer - reads output of vdecode on stdin, detects frame sync, writes decoded telemetry frames in hex on stdout
 -r bitrate, Hz; default 512 (only for time estimation)
 
-The old programs icedemod, icesync and bitsync are included for reference but are not built by default and may
-not even still compile.
+The old programs icedemod, icesync and bitsync are included for reference but are not built by default and may not even still compile.
 

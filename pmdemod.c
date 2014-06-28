@@ -320,36 +320,35 @@ int main(int argc,char *argv[]){
       
     {
       // Spin down to baseband with arbitrary phase
-      double cstep,carrier_sq,carrier_sum;
+      // Use two-pass method to estimate C/N0 = carrier amplitude^2 / (2 * carrier variance)
+      double cstep,carrier_amplitude,diffsumsq;
       double complex cpstep,carrier,dc;
       int i;
 
       cstep = 2*M_PI * carrier_freq/Samprate;  // carrier phase step per sample, radians
       cpstep = cos(cstep) - Q * sin(cstep); // Complex carrier step per sample
       carrier = 1;                          // Unity-amplitude carrier starts at 0 radians
-      dc = 0;                               // Accumulate arbitrary phase carrier at DC as we go
+      dc = 0;                               // Carrier is at DC with arbitrary phase
       for(i=0;i<Fftsize;i++){
-	dc += buffer[i] *= carrier;         // Spin down to baseband, accumulate carrier at DC
+	dc += buffer[i] *= carrier;         // Spin down to baseband, accumulate baseband carrier
 	carrier *= cpstep;                  // Increment carrier phase
       }
-      dc /= Fftsize;                        // Find average carrier amplitude
-      
-      // Normalize carrier amplitude and take conjugate so we'll rotate it back onto the I axis
-      dc = conj(dc) / cabs(dc);
-      // Rotate phase to put carrier on I axis and data on Q axis, estimate C/N0
-      carrier_sq = 0;
-      carrier_sum = 0;
+      dc /= Fftsize;                        // Average complex carrier
+      carrier_amplitude = cabs(dc);
+      dc = conj(dc) / carrier_amplitude;    // conjugate of unit carrier
+
+      // Rotate phase to put carrier on I axis and data on Q axis, measure noise
+      diffsumsq = 0;
       for(i=0; i<Fftsize; i++){
 	double complex cs;
 	
 	cs = buffer[i] *= dc;
-	carrier_sq += creal(cs)*creal(cs); // Sum of carrier squares
-	carrier_sum += creal(cs);          // Sum of carrier
+	diffsumsq += (creal(cs) - carrier_amplitude) * (creal(cs) - carrier_amplitude); // sum noise squared
       }
-      carrier_sq /= Fftsize;  // mean of carrier squares
-      carrier_sum /= Fftsize; // mean carrier
-      carrier_sum *= carrier_sum; // square of mean carrier
-      cn0 = 10*log10(0.5*Samprate*carrier_sum/(carrier_sq-carrier_sum)); // Update C/N0 estimate in dB
+      diffsumsq /= Fftsize; // noise variance
+      // C/N is the amplitude squared over twice the variance
+      // multiplying it by the sample rate gives C/N0
+      cn0 = 10*log10(Samprate*carrier_amplitude*carrier_amplitude/(2*diffsumsq)); // Update C/N0 estimate in dB
 
       if(cn0 > cn0_threshold)
 	Carrier_search_freq = carrier_freq; // Center this frequency in search window
@@ -363,6 +362,7 @@ int main(int argc,char *argv[]){
 	// Drop 3 db to ensure clipping can't occur
 	// Worst case is an input sample of abs(I) = abs(Q) = 32767
 	// that gets rotated to the Q axis
+	assert(cimag(buffer[i]) * M_SQRT1_2 <= 32767);
 	s = (short) (cimag(buffer[i]) * M_SQRT1_2);
 	fwrite(&s,sizeof(s),1,stdout);
       }

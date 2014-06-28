@@ -34,7 +34,7 @@ static inline int makesyms(unsigned long long state){
 }
 
 // Decode packet with the Fano algorithm.
-// Return 0 on success, -1 on timeout
+// Return number of bits decoded; will be equal to nbits on success
 int fano(
 unsigned long *metric,	// Final path metric (returned value) 
 unsigned long *cycles,	// Cycle count (returned value) 
@@ -56,6 +56,7 @@ unsigned long long tailbits) // Tail sequence at end of frame
   long ngamma;
   unsigned int lsym;
   unsigned long i;
+  int goodbits;
   
   if((nodes = (struct node *)malloc(nbits*sizeof(struct node))) == NULL){
     fprintf(stderr,"alloc failed\n");
@@ -187,18 +188,18 @@ unsigned long long tailbits) // Tail sequence at end of frame
     }
   }
   *metric =  np->gamma;	// Return final path metric 
+  *cycles = i;
   
   // Copy decoded data to user's buffer 
-  nbits = nbits/8;	// Copy tail, which should be 0's
+  // If we didn't finish, copy only as far as we got
+  goodbits = np - nodes + 1;
+  i = goodbits/8;
   np = &nodes[7]; // Start with first full byte
-  while(nbits-- != 0){
+  while(i-- != 0){
     *data++ = np->encstate;
     np += 8;
   }
-  
   free(nodes);
-  *cycles = i;
-  if(i > maxcycles)
-    return -1;	// Decoder timed out 
-  return 0;	// Successful completion 
+
+  return goodbits;
 }

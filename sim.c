@@ -32,7 +32,7 @@ unsigned char simulate(int data){
   int rand,s,low,high;
 
   assert(channel[0][255] != 0); // ensure we're initialized
-  assert(data == 0 || data == 1);
+  assert((data & ~1) == 0);
 
   // Generate uniform random integer and do binary search in cdf table
   rand = random();

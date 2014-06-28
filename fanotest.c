@@ -161,12 +161,12 @@ int main(int argc,char *argv[]){
     totcycles += cycles;
     i = memcmp(data,decode_data,sizeof(data));
     bad += (i != 0);
-    undetected += (r == 0 && i != 0);
+    undetected += (r == Nbits && i != 0);
     good += (i == 0);
 
     if(Verbose > 1 || (Verbose && r != 0)){
       printf("trial %d fano returns %d, metric = %ld, cycles = %ld",trial,r,metric,cycles);
-      if(i != 0 && (Verbose > 1 || r == 0)){
+      if(i != 0 && (Verbose > 1 || r == Nbits)){
 	// Error in data
 	putchar(' ');
 	for(i=0;i<Nbits/8;i++)
