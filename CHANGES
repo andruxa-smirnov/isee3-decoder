@@ -1,3 +1,5 @@
+In version 0.10, 'decode' now uses hybrid decoding.
+
 With version 0.8, pmdemod can read from a pipe (e.g., on standard input); previous versions could only read from a file.
 
 Versions 0.6-0.7 incorporate various performance enhancements, particularly in the symbol demodulator (symdemod), which is now vastly faster at the lower symbol rates due to an improved symbol timing algorithm. Because it uses a fairly stiff tracking loop that may not acquire if the initial estimate is too far off, symdemod now knows the actual clock frequency of the spacecraft (which is a little high) and uses it unless the frequency you give the -c option has a decimal point in it.

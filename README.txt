@@ -1,9 +1,14 @@
 ISEE-3/ICE Telemetry demodulator and decoder
 Copyright Phil Karn, KA9Q, 28 June 2014
-version 0.9
+version 0.10
 May be used under the terms of the GNU Public License 2.0 (GPL)
 
-The major change in this version is the new program "decode" that replaces both vdecode and framer. It also incorporates the Fano sequential decoding algorithm as an alternative to the slow Viterbi algorithm. Fano is enormously faster than Viterbi but performs about 0.5 - 1.0 dB worse. Fano also has a variable execution speed that increases sharply as the decoder Eb/No threshold of about 2.5 dB is reached.
+The major change in 0.10 is that "decode" now uses hybrid Fano/Viterbi decoding. By default it first tries Fano; if this fails *and* the previous frame successfully decoded (with either algorithm), decoding is tried again with the Viterbi algorithm.
+
+This means that after a sustained period of noise (or at the beginning of a recording) at least one frame must be successfully decoded with Fano before Viterbi will be used at all. This is to keep the program from falling way behind when fed noise. (You can force Viterbi decoding on all frames with the -V option. Likewise you can disable it and do only Fano decoding with the -F option.)
+
+
+The major change in 0.9 was the new program "decode" that replaces both vdecode and framer. It also incorporates the Fano sequential decoding algorithm as an alternative to the slow Viterbi algorithm. Fano is enormously faster than Viterbi but performs about 0.5 - 1.0 dB worse. Fano also has a variable execution speed that increases sharply as the decoder Eb/No threshold of about 2.5 dB is reached.
 
 This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into three (not four) modules that you run in a UNIX pipeline like this:
 
@@ -43,7 +48,8 @@ symdemod - reads output of pmdemod on stdin, writes demodulated, 8-bit (offset-1
 -q quiet mode
 
 decode - Reads output of symdemod on stdin, writes decoded frames on stdout
--f Use Fano sequential decoding instead of Viterbi decoding
+-V Use Viterbi decoding only (slow - only runs about 230 bps on a typical i7)
+-F Use Fano sequential decoding only
 -r Symbol rate, Hz; default 1024 (used only for output timestamps)
 -s Fano scale parameter; default 8
 -d Fano delta parameter; default 32

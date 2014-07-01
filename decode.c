@@ -1,4 +1,4 @@
-// Experimental Fano decoder for ISEE-3/ICE
+// Fano/Viterbi decoder for ISEE-3/ICE
 // Phil Karn, KA9Q, June 2014
 
 #include <stdio.h>
@@ -24,8 +24,9 @@
 #define SYNCWORD 0x12fc819fbeLL // Last 5 bytes of every data frame
 
 int Verbose;
+int Viterbi_only;
 double Symrate;
-int Fano;
+int Fano_only;
 double Fano_scale;
 int Fano_delta;
 unsigned long Fano_maxcycles;
@@ -40,7 +41,6 @@ static inline int parity(unsigned long long x){
   return __builtin_parityll(x);
 }
 
-
 int main(int argc,char *argv[]){
   int i;
   char *locale;
@@ -53,42 +53,67 @@ int main(int argc,char *argv[]){
   long long total_symbols = 0;
   int mettab[2][256];
   long long frames = 1;
+  enum { NONE,VITERBI,FANO } decoder;
 
   if((locale = getenv("LANG")) != NULL)
     setlocale(LC_ALL,locale);
   else
     setlocale(LC_ALL,"en_US.utf8");
 
-  memset(symbols,0,sizeof(symbols));
-
+  // Set defaults
   Symrate = 1024;
   Fano_scale = 8;
   Fano_delta = 4 * Fano_scale;
   Fano_maxcycles = 100;
-  while((i = getopt(argc,argv,"fr:s:m:d:")) != EOF){
+  while((i = getopt(argc,argv,"FVvr:s:m:d:")) != EOF){
     switch(i){
-    case 'd':
-      Fano_delta = atoi(optarg);
+    case 'F':
+      Fano_only = 1;
       break;
-    case 'm':
-      Fano_maxcycles = atol(optarg);
+    case 'V':
+      Viterbi_only = 1;
       break;
-    case 's':
-      Fano_scale = atof(optarg);
-      break;
-    case 'f':
-      Fano = 1;
+    case 'v':
+      Verbose++;
       break;
     case 'r':
       Symrate = atof(optarg);
       break;
+    case 's':
+      Fano_scale = atof(optarg);
+      break;
+    case 'm':
+      Fano_maxcycles = atol(optarg);
+      break;
+    case 'd':
+      Fano_delta = atoi(optarg);
+      break;
+    default:
+      printf("usage: %s [-F] [-V] [-v] [-r symrate] [-s fano_scale] [-m fano_maxcycles] [-d fano_delta]\n",
+	     argv[0]);
     }
   }
-  if(!Fano){
-    printf("%s: using Viterbi decoding\n",argv[0]);
+  if(Fano_only && Viterbi_only){
+    printf("Specify only one of -F or -V\n");
+    exit(1);
+  }
+
+  if(!Fano_only && !Viterbi_only){
+    printf("%s: Using Fano decoding with Viterbi fallback\n",argv[0]);
+  }
+
+  if(Fano_only){
+    printf("%s: Using Fano decoding only\n",argv[0]);
+  } else {
+    // Set up Viterbi decoder
     vd = create_viterbi224(FRAMEBITS);
     assert(vd != NULL);
+  }
+
+  if(Viterbi_only){
+    printf("%s: using Viterbi decoding only\n",argv[0]);
   } else {
+    // Set up Fano decoder
     double noise_amp,sig_amp,total_amp;
     double est_esn0;
 
@@ -100,13 +125,15 @@ int main(int argc,char *argv[]){
     noise_amp = total_amp/sqrt(1 + 2*est_esn0);
     sig_amp = noise_amp * sqrt(2*est_esn0);
 
-    printf("%s: using Fano decoding: delta %'d; scale %'.1lf; maxcycles %'lu; signal %.1lf; noise %.1lf\n",
+    printf("%s: Fano decoder params: delta %'d; scale %'.1lf; maxcycles %'lu; signal %.1lf; noise %.1lf\n",
 	   argv[0],Fano_delta,Fano_scale,Fano_maxcycles,sig_amp,noise_amp);
     gen_met(mettab,sig_amp,noise_amp,0.5,Fano_scale);
   }
+
   sync_start = -1;
   symcount = 0;
   lock = 0;
+  memset(symbols,0,sizeof(symbols));
   while(1){
     int c,i,decode_result;
 
@@ -144,27 +171,32 @@ int main(int argc,char *argv[]){
 	goto done;
       symbols[symcount++] = c;
     }
-    if(!Fano){
-      // Attempt a decode starting after the sync
+    decoder = NONE;
+    if(!Viterbi_only){
+      // Try a Fano decode
+      unsigned long metric;
+      unsigned long cycles;
+      
+      memset(data,0,sizeof(data)); // Wipe out previous data
+      decode_result = fano(&metric,&cycles,data,&symbols[sync_start+SYNCBITS],FRAMEBITS,mettab,Fano_delta,100,
+	   SYNCWORD & 0xffffff,SYNCWORD & 0xffffff);
+#if 0
+      printf("Fano returns %d metric %'ld cycles %'ld\n",decode_result,metric,cycles);
+#endif
+      decoder = FANO;
+    }
+    if(Viterbi_only || (lock && decode_result != FRAMEBITS)){
+      // Decode with Viterbi if:
+      // 1. Viterbi_only is specified
+      // 2. A Fano attempt failed but the previous frame succeeded
       init_viterbi224(vd,SYNCWORD & 0xffffff); // Known starting state after sync
       update_viterbi224_blk(vd,&symbols[sync_start+SYNCBITS],FRAMEBITS);
       chainback_viterbi224(vd,data,FRAMEBITS,SYNCWORD & 0xffffff);
       decode_result = FRAMEBITS; // Viterbi always "succeeds"
-    } else {
-      // Try a Fano decode
-      unsigned long metric;
-      unsigned long cycles;
-
-      memset(data,0,sizeof(data)); // Wipe out previous data
-      decode_result = fano(&metric,&cycles,data,&symbols[sync_start+SYNCBITS],FRAMEBITS,mettab,Fano_delta,100,
-	       SYNCWORD & 0xffffff,SYNCWORD & 0xffffff);
-#if 0
-      printf("Fano returns %d metric %'ld cycles %'ld\n",decode_result,metric,cycles);
-#endif
+      decoder = VITERBI;
     }
-    // If the decoder succeeded, see if the decoded frame ends with the 5-byte sync sequence
-    // The last 23 bits from the Viterbi decoder will always be there since we forced them,
-    // but the 17 bits before them are actual data
+    // If the decoder thinks it succeeded, see if the decoded frame ends with the 5-byte sync sequence
+    // The last 23 bits will always be there since we forced them but the 17 bits before them are actual data
     // A decoder failure always indicates non-lock
     lock = 0;
     if(decode_result == FRAMEBITS){
@@ -179,14 +211,15 @@ int main(int argc,char *argv[]){
 	lock = 1;      // Good frame
     }
     // Dump data
-    // This will dump 0's on a failed Fano frame. We could get clever and show X's or something.
+    // This will dump 0's on a failed Fanon frame. We could get clever and show X's or something.
     {
       long long start_time;
 
       start_time = total_symbols + sync_start + SYNCBITS;
-      printf("Frame %'llu at symbol %'lld (%s) - %s:\n",
+      printf("Frame %'llu at symbol %'lld (%s) with %s %s\n",
 	     frames,start_time,format_hms(start_time/Symrate),
-	     lock ? "good" : "bad");
+	     decoder == VITERBI ? "Viterbi" : "Fano",
+	     !lock ? "(bad)" : "");
       for(i=0;i<FRAMEBITS/8;i++){
 	printf("%02x",data[i]);
 	if((i % 16) == 15)
