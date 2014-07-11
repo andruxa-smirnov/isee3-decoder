@@ -1,63 +1,37 @@
 ISEE-3/ICE Telemetry demodulator and decoder
-Copyright Phil Karn, KA9Q, 28 June 2014
-version 0.10
+Copyright Phil Karn, KA9Q, 8 June 2014
+version 0.2
 May be used under the terms of the GNU Public License 2.0 (GPL)
 
-The major change in 0.10 is that "decode" now uses hybrid Fano/Viterbi decoding. By default it first tries Fano; if this fails *and* the previous frame successfully decoded (with either algorithm), decoding is tried again with the Viterbi algorithm.
 
-This means that after a sustained period of noise (or at the beginning of a recording) at least one frame must be successfully decoded with Fano before Viterbi will be used at all. This is to keep the program from falling way behind when fed noise. (You can force Viterbi decoding on all frames with the -V option. Likewise you can disable it and do only Fano decoding with the -F option.)
+This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into four modules that you run
+in a UNIX pipeline like this:
 
+pmdemod input_file | symdemod | vdecode | framer
 
-The major change in 0.9 was the new program "decode" that replaces both vdecode and framer. It also incorporates the Fano sequential decoding algorithm as an alternative to the slow Viterbi algorithm. Fano is enormously faster than Viterbi but performs about 0.5 - 1.0 dB worse. Fano also has a variable execution speed that increases sharply as the decoder Eb/No threshold of about 2.5 dB is reached.
+The input_file is expected to be a series of 16-bit signed integer samples in little-endian format. The I
+channel is expected first. If Q is first, use the -f (flip) flag to invert the spectrum.
 
-This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into three (not four) modules that you run in a UNIX pipeline like this:
+Each program writes its status to stderr so you can see what it's doing while its output is redirected.
 
-pmdemod input_file | symdemod [-c <symrate>] | decode [-f] [-r <symrate>]
+Only Manchester (>= 512 bps) is supported at present. Low speed modes on 1024Hz subcarrier coming soon.
+Only the 512 bps rate has been tested.
 
-The -f option to decode specifes the Fano algorithm; the default is Viterbi.
-
-Note that with ISEE-3, the symrate is always twice the data rate.
-
-Starting with version 0.8, pmdemod can read from a pipe or device as well as a file, and will read from standard input if no file name is given as a parameter.
-
-The input stream is expected to be a series of 16-bit signed integer samples in little-endian format. The I channel is expected first. If Q is first, use the -f (flip) flag to pmdemod to invert the spectrum.
-
-Each program writes its status to stderr so you can see what it's doing while its output is redirected. Use the -q option to a program to shut up its diagnostics.
-
-This version has been tested at 32 sps/16 bps, 128 sps/64 bps, 1024 sps/512 bps and 4096 sps/2048 bps. Specifying an integer to the -c option of symdemod causes the actual clock frequency (which is slightly higher) to be used. The measured clock speeds (at -3 km/s velocity) are approximately:
-
-1024 sps: 1024.475 Hz
-4096 sps: 4097.9 Hz
-32 sps: 32.0148 Hz
-
-pmdemod - reads raw receiver file, tracks carrier, writes baseband PM samples (16-bit signed ints) on stdout
+pmdemod - reads raw receiver file, tracks carrier, writes baseband PM samples (doubles) on stdout
 
 -S starting carrier frequency estimate, Hz
 -W +/- Frequency search range while locked, Hz (searches entire passband when unlocked)
 -D Doppler chirp rate, Hz/s
--t C/N0 lock threshold, dB; default 21 dB (good for 512 bps; should be lowered for lower data rates)
+-t C/N0 lock threshold, dB; default 21 dB
 -q Quiet mode
--b carrier tracking FFT bin size, Hz; default 4 Hz (changed from 1 Hz to better track spin Doppler)
+-b carrier tracking FFT bin size, Hz; default 1 Hz
 -f flip I & Q samples (invert spectrum)
 -r Sample rate, Hz; default: 250000
 
 symdemod - reads output of pmdemod on stdin, writes demodulated, 8-bit (offset-128) soft decisions on stdout
--c Symbol rate, Hz; default 1024.475 (measured rate at 1024 Hz nominal; divide or multiply by 2^n)
--C Clocks per symbol (default 1 for symbol rates > 1000; 1024/symrate for lower rates)
+-c Symbol rate, Hz; default 1024
 -r Sample rate, Hz; default 250000
 -q quiet mode
-
-decode - Reads output of symdemod on stdin, writes decoded frames on stdout
--V Use Viterbi decoding only (slow - only runs about 230 bps on a typical i7)
--F Use Fano sequential decoding only
--r Symbol rate, Hz; default 1024 (used only for output timestamps)
--s Fano scale parameter; default 8
--d Fano delta parameter; default 32
--m Fano maximum cycles per bit; default 100
-
-The new 'decode' program replaces both vdecode and framer, which were used as follows:
-
-pmdemod input_file | symdemod -c <symrate> | vdecode | framer -r <bitrate>
 
 vdecode - Reads output of symdemod on stdin, writes Viterbi-decoded bits on stdout ('0'/'1')
 -p Start with opposite decoder symbol phase (also flips automatically based on encoded sync observations)
@@ -68,5 +42,6 @@ vdecode - Reads output of symdemod on stdin, writes Viterbi-decoded bits on stdo
 framer - reads output of vdecode on stdin, detects frame sync, writes decoded telemetry frames in hex on stdout
 -r bitrate, Hz; default 512 (only for time estimation)
 
-The old programs icedemod, icesync and bitsync are included for reference but are not built by default and may not even still compile.
+The old programs icedemod, icesync and bitsync are included for reference but are not built by default.
+
 

@@ -61,11 +61,13 @@ void *create_viterbi224(int len){
   
   // Ordinary malloc() only returns 8-byte alignment, we need 16
   i = posix_memalign(&p, sizeof(__m128i),sizeof(struct v224));
-  assert(i == 0);
+  if(i != 0)
+    return NULL;
 
   vp = (struct v224 *)p;
   p = malloc(len*sizeof(decision_t));
-  assert(p != NULL);
+  if(p == NULL)
+    return NULL;
   vp->decisions = (decision_t *)p;
   vp->len = len;
 

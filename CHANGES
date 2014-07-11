@@ -1,10 +1,36 @@
-In version 0.10, 'decode' now uses hybrid decoding.
+Change log for the KA9Q ISEE-3/ICE demodulator/decoder software
+Phil Karn, karn@ka9q.net
+Last updated 10 July 2014
 
-With version 0.8, pmdemod can read from a pipe (e.g., on standard input); previous versions could only read from a file.
+Version 0.11:
 
-Versions 0.6-0.7 incorporate various performance enhancements, particularly in the symbol demodulator (symdemod), which is now vastly faster at the lower symbol rates due to an improved symbol timing algorithm. Because it uses a fairly stiff tracking loop that may not acquire if the initial estimate is too far off, symdemod now knows the actual clock frequency of the spacecraft (which is a little high) and uses it unless the frequency you give the -c option has a decimal point in it.
+This is mainly system performance tuning of the 'decode' program. Unless it is always selected (-V), memory for the Viterbi decoder is now allocated only when actually needed for fallback from a failed Fano decode attempt. The Viterbi decoder uses about 1 GB, so this might make a difference on smaller machines.
 
-Version 0.5 is a minor change from 0.4. It includes a change made for Tim R to get the Viterbi decoder to compile on a pre-SSE-4.1 system, plus some updates to the README.txt giving the measured symbol rates for the symdemod.
+The -p ("persistent") option has been added to 'decode' for hybrid mode to force fallback to Viterbi whenever Fano fails to decode a frame, instead of only when the previous frame succeeded. Be careful: this will cause the decoder to fall behind real time on no signal when the system is not fast enough for real-time Viterbi decoding (which is usually the case at 512 bps and up.)
+
+Versions of decode (decode_port) and the obsolete vdecode (vdecode_port) that use a Viterbi decoder in portable C are included for non-x86/SSE2 systems. Warning: this is very slow -- about 30 bps on an i7!
+
+Version 0.10:
+
+'decode' uses hybrid decoding by default. A Fano (sequential) decoder is tried first. If it fails to decode, a Viterbi decode is tried IF the previous frame decoded successfully (with either Viterbi or Fano). This is a heuristic intended to recover the occasional weak frame without trying to Viterbi-decode pure noise, which would cause most systems to fall behind real-time.
+
+This means that after a sustained period of noise (or at the beginning of a recording) at least one frame must be successfully decoded with Fano before Viterbi will be used at all. This is to keep the program from falling way behind when fed noise. (You can force Viterbi decoding on all frames with the -V option. Likewise you can disable it and do only Fano decoding with the -F option. Also see the -p option added to version 0.11 above.)
+
+Version 0.9:
+
+The new program "decode" replaces both vdecode and framer. It also incorporates the Fano sequential decoding algorithm as an alternative to the slow Viterbi algorithm. Fano is enormously faster than Viterbi but performs about 0.5 - 1.0 dB worse. Fano also has a variable execution speed that increases sharply as the decoder Eb/No threshold of about 2.5 dB is reached.
+
+Version 0.8:
+
+'pmdemod' can read from a pipe (e.g., on standard input); previous versions could only read from a file.
+
+Versions 0.6-0.7:
+
+These incorporate various performance enhancements, particularly in the symbol demodulator (symdemod), which is now vastly faster at the lower symbol rates due to an improved symbol timing algorithm. Because it uses a fairly stiff tracking loop that may not acquire if the initial estimate is too far off, symdemod now knows the actual clock frequency of the spacecraft (which is a little high) and uses it unless the frequency you give the -c option has a decimal point in it.
+
+Version 0.5:
+
+This is  a minor change from 0.4. It includes a change made for Tim R to get the Viterbi decoder to compile on a pre-SSE-4.1 system, plus some updates to the README.txt giving the measured symbol rates for the symdemod.
 
 The -C option to symdemod specifies the number of clocks per symbol. This is set automatically to 1 for symbol rates above 1000 Hz (thus allowing for a -c parameter < 1024 should it drop that low after perigee due to Doppler) and to 1024/symrate for 512 sps and lower. I.e., at 32 sps (16 data bits/sec) symdemod will automatically assume 1024/32 = 32 cycles of 1024 Hz subcarrier per symbol.
 
@@ -17,9 +43,5 @@ This code has been operationally tested at all three data rates I've seen so far
 baudline's observation of the spin-induced Doppler on the RF carrier (caused by a 4.75 cm offset of the S-band antenna from the spacecraft c.g.) made me re-evaluate my carrier frequency tracking algorithm in pmdemod. I had been using a rather narrow FFT frequency bin (analogous to a carrier PLL loop bandwidth) of only 1 Hz, and this caused an appreciable amount of phase twist as the spacecraft rotated 2 radians in each integration period.
 
 I've increased the default to 5 Hz, which should still provide adequate SNR for carrier tracking especially when the new optional search range feature is used. Here's how it works: when the C/No is above a specified threshold (default 21 dB-Hz, appropriate for 512 bps but should be lowered for lower data rates), the carrier is declared "locked" and only a specified range of frequencies are searched around it to minimize the risk of being distracted by a temporary noise spike somewhere else in the receiver passband. When the C/No falls below threshold, the algorithm reverts to looking for the strongest bin anywhere in the passband. This makes essentially no difference when C/No is high (since there's little risk of any noise exceeding the true carrier) but it might make a difference when operating at low C/No, such as at low data rates on smaller antennas.
-
-I'm still working on improvements to the Viterbi decoder phasing algorithm. It works well enough at the higher data rates, but it wastes too many bits to adapt at the lower data rates. I've provided a simple workaround that lets the operator manually override the phase setting; I'd try one, and if that didn't work I'd retry with the other. This is less than user-friendly, so a better idea is to try both phases in parallel and automatically pick whichever one produces good data. This will be acceptable at the lower data rates but will make things even slower at the higher rates so it'll probably be a rate-dependent option.
-
-I'm also going to write a drop-in replacement for vdecode (the Viterbi decoder) that uses sequential (Fano) decoding instead. This is *much* faster than Viterbi at the expense of somewhat poorer error performance (0.5 - 1.0 dB) and a potentially very long decoding time when the signal is poor. Neither is ideal in every circumstance, which is why I want to provide both.
 
 --Phil

@@ -5,8 +5,8 @@ CFLAGS=-O3 -march=native -mtune=native -g -Wall -Wunreachable-code $(INCLUDE)
 LDFLAGS=-g $(LIBPATH)
 CC=gcc
 
-MAIN=pmdemod symdemod decode
-OLD=icesync bitsync framer vdecode
+MAIN=pmdemod symdemod decode decode_port
+OLD=icesync bitsync framer vdecode vdecode_port
 MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown autocorrelate
 
 all: $(MAIN)
@@ -21,6 +21,10 @@ misc: $(MISC)
 decode: decode.o viterbi224_sse2.o timeformat.o metrics.o fano.o
 	gcc $(LDFLAGS) -o $@ $^  -lm
 
+# portable version of Viterbi for non-x86/SSE2 machines (much slower)
+decode_port: decode.o viterbi224_port.o timeformat.o metrics.o fano.o
+	gcc $(LDFLAGS) -o $@ $^  -lm
+
 autocorrelate: autocorrelate.o
 	gcc $(LDFLAGS) -o $@ $^ -lfftw3 -lm	
 
@@ -31,6 +35,10 @@ framer: framer.o timeformat.o
 	gcc $(LDFLAGS) -o $@ $^
 
 vdecode: vdecode.o viterbi224_sse2.o timeformat.o
+	gcc $(LDFLAGS) -o $@ $^ 
+
+# portable version of Viterbi for non-x86/SSE2 machines (much slower)
+vdecode_port: vdecode.o viterbi224_port.o timeformat.o
 	gcc $(LDFLAGS) -o $@ $^ 
 
 symdemod: symdemod.o timeformat.o
