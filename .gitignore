@@ -3,3 +3,16 @@ pmdemod
 symdemod
 decode
 decode_port
+autocorrelate
+bitsync
+fanotest
+framer
+gensine
+hybridtest
+icesync
+simtest
+spindown
+vdecode
+vdecode_port
+vtest224port
+vtest224sse
