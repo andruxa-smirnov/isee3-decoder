@@ -3,10 +3,10 @@ Copyright Phil Karn, KA9Q, 8 June 2014
 May be used under the terms of the GNU Public License 2.0 (GPL)
 
 
-This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into four modules that you run
+This is a snapshot of my ISEE-3/ICE telemetry decoder. It is now broken into three modules that you run
 in a UNIX pipeline like this:
 
-pmdemod input_file | symdemod | vdecode | framer
+./pmdemod input_file | ./symdemod | ./decode
 
 The input_file is expected to be a series of 16-bit signed integer samples in little-endian format. The I
 channel is expected first. If Q is first, use the -f (flip) flag to invert the spectrum.
