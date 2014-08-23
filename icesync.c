@@ -431,7 +431,7 @@ double erf1(double z){
 
   sum = 0;
   for(k=0;k<100;k++)
-    sum += (c[k] / (2*k+1)) * powl(z/M_2_SQRTPIl,2*k+1);
+    sum += (c[k] / (2*k+1)) * powl(z/M_2_SQRTPI,2*k+1);
 
   return sum;
 }
