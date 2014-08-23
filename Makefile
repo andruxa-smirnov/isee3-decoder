@@ -7,12 +7,18 @@ CC=gcc
 
 MAIN=pmdemod symdemod decode decode_port
 OLD=icesync bitsync framer vdecode vdecode_port
-MISC=hybridtest fanotest vtest224sse vtest224port simtest gensine spindown autocorrelate
+TESTS=hybridtest fanotest vtest224sse vtest224port simtest
+MISC=$(TESTS) gensine spindown autocorrelate
 
 all: $(MAIN)
 
 install: all
 	install $(MAIN) ~/bin/
+
+check: $(TESTS)
+	@for test in $(TESTS); do \
+	  echo $${test}; ./$${test}; \
+	done
 
 old: $(OLD)
 
