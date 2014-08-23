@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <math.h>
 
 void setup_channel(double signal, double noise);
@@ -30,8 +29,5 @@ int main(){
   }
   putchar('\n');
 
-
-
-
-  exit(0);
+  return 0;
 }
