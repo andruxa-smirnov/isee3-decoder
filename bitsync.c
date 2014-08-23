@@ -2,7 +2,7 @@
 // Phil Karn, KA9Q, June 2014
 
 #include <stdio.h>
-#include <linux/limits.h>
+#include <limits.h>
 #include <unistd.h>
 #include <stdlib.h>
 #define __USE_GNU   1
