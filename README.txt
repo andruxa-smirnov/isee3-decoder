@@ -1,6 +1,5 @@
 ISEE-3/ICE Telemetry demodulator and decoder
 Copyright Phil Karn, KA9Q, 8 June 2014
-version 0.2
 May be used under the terms of the GNU Public License 2.0 (GPL)
 
 
