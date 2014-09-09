@@ -147,7 +147,7 @@ int main(int argc,char *argv[]){
 
  done:; // Clean up and exit
   if(samples != MAP_FAILED && munmap(samples,length) == -1){
-    fprintf(stderr,"munmap(%p,%ld) failed: %s\n",samples,length,strerror(errno));
+    fprintf(stderr,"munmap(%p,%lld) failed: %s\n",samples,(long long)length,strerror(errno));
   }
   if(fd != -1)
     close(fd);
