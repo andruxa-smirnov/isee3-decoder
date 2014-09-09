@@ -39,10 +39,6 @@ int sync_vector[] = {
   1, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 };
 
-static inline int parity(unsigned long long x){
-  return __builtin_parityll(x);
-}
-
 int main(int argc,char *argv[]){
   int i;
   char *locale;
